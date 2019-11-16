@@ -626,7 +626,7 @@ bool HumanPlayer::spacePressed() {
 bool HumanPlayer::placeShips(RenderWindow &window) {
     _boardRenderer.drawBoard(window, false);
     _placeableShipCollection.drawShips(window);
-    
+
     Vector2i mousePos = sf::Mouse::getPosition(window);
     updateSpacePress();
 
@@ -721,7 +721,24 @@ public:
 ComputerPlayer::ComputerPlayer() : Player(false) {}
 
 void ComputerPlayer::placeShips() {
+    for(int i = 0; i < _placeableShipCollection.getShipNum(); i++) {
+        PlaceableShip currentShip = _placeableShipCollection.getShip(i);
 
+        while(true) {
+            int randomRow = rand() % 10;
+            int randomCol = rand() % 10;
+
+            if(rand() % 2) {
+                currentShip.rotate();
+            }
+
+            if(_board.shipFits(currentShip, randomRow, randomCol)) {
+                _board.placeShip(currentShip, randomRow, randomCol);
+
+                break;
+            }
+        }
+    }
 }
 
 void ComputerPlayer::getMove() {
@@ -736,6 +753,7 @@ int main() {
     RenderWindow window( VideoMode(1625, 700), "SFML Example Window" );
 
     HumanPlayer humanPlayer;
+    ComputerPlayer computerPlayer;
 
     //BattleshipBoard myBoard;
     BattleshipBoard opponentBoard;
@@ -758,31 +776,11 @@ int main() {
             if(allShipsPlaced) {
                 state = COMPUTER_SETUP;
             }
-        }
+        } else if(state == COMPUTER_SETUP) {
+            computerPlayer.placeShips();
 
-//        else if(state == COMPUTER_SETUP) {
-//
-//            for(int i = 0; i < 5; i++) {
-//                PlaceableShip currentShip = opponentPlaceableShips.getShip(i);
-//
-//                while(true) {
-//                    int randomRow = rand() % 10;
-//                    int randomCol = rand() % 10;
-//
-//                    if(rand() % 2) {
-//                        currentShip.rotate();
-//                    }
-//
-//                    if(opponentBoard.shipFits(currentShip, randomRow, randomCol)) {
-//                        opponentBoard.placeShip(currentShip, randomRow, randomCol);
-//
-//                        break;
-//                    }
-//                }
-//            }
-//
-//            state = PLAYER_TURN;
-//        } else if (state == PLAYER_TURN){
+            state = PLAYER_TURN;
+        } //else if (state == PLAYER_TURN){
 //            myBoardRenderer.drawBoard(window, false);
 //            opponentBoardRenderer.drawBoard(window, true);
 //
