@@ -70,12 +70,15 @@ bool Ship::isHorizontal() {
 class PlaceableShip : public Ship{
 public:
     using Ship::Ship; // Inherit the constructor of the ship class
-    bool contains(double x, double y); // Checks if the ship contians the given coordinate for clicking purposes
+    bool contains(Vector2i loc); // Checks if the ship contians the given coordinate for clicking purposes
     void updatePos(double x, double y);
     void rotate();
 };
 
-bool PlaceableShip::contains(double x, double y) {
+bool PlaceableShip::contains(Vector2i loc) {
+    int x = loc.x;
+    int y = loc.y;
+
     int width =  50 * (_horizontal ? _length : 1);
     int height = 50 * (_horizontal ? 1 : _length);
 
@@ -383,16 +386,19 @@ void StatusShipCollection::drawShips(RenderWindow &window) {
 class PlaceableShipCollection : public ShipCollection<PlaceableShip> {
 public:
     PlaceableShipCollection(bool player, BoardRenderer &boardRenderer, BattleshipBoard &battleshipBoard);
-    void handleClick(RenderWindow &window, double mouseX, double mouseY);
-    void selectShip(RenderWindow &window, double mouseX, double mouseY);
-    void lockShip(RenderWindow &window, double mouseX, double mouseY);
+    //void handleClick(RenderWindow &window, double mouseX, double mouseY);
+    //void selectShip(RenderWindow &window, double mouseX, double mouseY);
+    //void lockShip(RenderWindow &window, double mouseX, double mouseY);
 
-    void updateMousePos(double mouseX, double mouseY);
-    void rotateActiveShip();
+    //void updateMousePos(double mouseX, double mouseY);
+    //void rotateActiveShip();
 
     bool allPlaced();
 
-    PlaceableShip getShip(int index);
+    PlaceableShip &getShip(int index);
+    int getShipNum();
+
+    void removeShip(int index);
 
 private:
     BoardRenderer *_boardRenderer;
@@ -411,74 +417,81 @@ PlaceableShipCollection::PlaceableShipCollection(bool player, BoardRenderer &boa
     this->_activeOffsetX = 0.0;
     this->_activeOffsetY = 0.0;
 }
-
-void PlaceableShipCollection::handleClick(RenderWindow &window, double mouseX, double mouseY) {
-    if(_activeIndex == -1) {
-        selectShip(window, mouseX, mouseY);
-    } else {
-        lockShip(window, mouseX, mouseY);
-    }
-}
-
-void PlaceableShipCollection::selectShip(RenderWindow &window, double mouseX, double mouseY) {
-    for(int i = 0; i < _ships.size(); i++) {
-        if(_ships.at(i).contains(mouseX, mouseY)) {
-            _activeIndex = i;
-
-            _activeOffsetX = -mouseX + _ships.at(i).getX();
-            _activeOffsetY = -mouseY + _ships.at(i).getY();
-
-            window.setMouseCursorVisible(false);
-        }
-    }
-}
-
-void PlaceableShipCollection::lockShip(RenderWindow &window, double mouseX, double mouseY) {
-    pair<int, int> gridPos = _boardRenderer->getGridPos(mouseX + _activeOffsetX, mouseY + _activeOffsetY);
-
-    int rowPos = gridPos.first;
-    int columnPos = gridPos.second;
-
-    if(_battleshipBoard->shipFits(_ships.at(_activeIndex), rowPos, columnPos)) {
-        _battleshipBoard->placeShip(_ships.at(_activeIndex), rowPos, columnPos);
-        _ships.erase(_ships.begin() + _activeIndex);
-        _activeIndex = -1;
-
-        window.setMouseCursorVisible(true);
-    }
-}
-
-void PlaceableShipCollection::updateMousePos(double mouseX, double mouseY) {
-    if(_activeIndex != -1) {
-        double xPos = mouseX + _activeOffsetX ;
-        double yPos = mouseY + _activeOffsetY;
-
-        pair<int, int> gridPos = _boardRenderer->getGridPos(xPos, yPos);
-
-        int rowPos = gridPos.first;
-        int columnPos = gridPos.second;
-
-        if(_battleshipBoard->shipFits(_ships.at(_activeIndex), rowPos, columnPos)) {
-            xPos = rowPos * 50 + _boardRenderer->x;
-            yPos = columnPos * 50 + _boardRenderer->y;
-        }
-
-        this->_ships.at(_activeIndex).updatePos(xPos, yPos);
-    }
-}
-
-void PlaceableShipCollection::rotateActiveShip() {
-    this->_ships.at(_activeIndex).rotate();
-}
+//
+//void PlaceableShipCollection::handleClick(RenderWindow &window, double mouseX, double mouseY) {
+//    if(_activeIndex == -1) {
+//        selectShip(window, mouseX, mouseY);
+//    } else {
+//        lockShip(window, mouseX, mouseY);
+//    }
+//}
+//
+//void PlaceableShipCollection::selectShip(RenderWindow &window, double mouseX, double mouseY) {
+//    for(int i = 0; i < _ships.size(); i++) {
+//        if(_ships.at(i).contains(mouseX, mouseY)) {
+//            _activeIndex = i;
+//
+//            _activeOffsetX = -mouseX + _ships.at(i).getX();
+//            _activeOffsetY = -mouseY + _ships.at(i).getY();
+//
+//            window.setMouseCursorVisible(false);
+//        }
+//    }
+//}
+//
+//void PlaceableShipCollection::lockShip(RenderWindow &window, double mouseX, double mouseY) {
+//    pair<int, int> gridPos = _boardRenderer->getGridPos(mouseX + _activeOffsetX, mouseY + _activeOffsetY);
+//
+//    int rowPos = gridPos.first;
+//    int columnPos = gridPos.second;
+//
+//    if(_battleshipBoard->shipFits(_ships.at(_activeIndex), rowPos, columnPos)) {
+//        _battleshipBoard->placeShip(_ships.at(_activeIndex), rowPos, columnPos);
+//        _ships.erase(_ships.begin() + _activeIndex);
+//        _activeIndex = -1;
+//
+//        window.setMouseCursorVisible(true);
+//    }
+//}
+//
+//void PlaceableShipCollection::updateMousePos(double mouseX, double mouseY) {
+//    if(_activeIndex != -1) {
+//        double xPos = mouseX + _activeOffsetX ;
+//        double yPos = mouseY + _activeOffsetY;
+//
+//        pair<int, int> gridPos = _boardRenderer->getGridPos(xPos, yPos);
+//
+//        int rowPos = gridPos.first;
+//        int columnPos = gridPos.second;
+//
+//        if(_battleshipBoard->shipFits(_ships.at(_activeIndex), rowPos, columnPos)) {
+//            xPos = rowPos * 50 + _boardRenderer->x;
+//            yPos = columnPos * 50 + _boardRenderer->y;
+//        }
+//
+//        this->_ships.at(_activeIndex).updatePos(xPos, yPos);
+//    }
+//}
+//
+//void PlaceableShipCollection::rotateActiveShip() {
+//    this->_ships.at(_activeIndex).rotate();
+//}
 
 bool PlaceableShipCollection::allPlaced() {
     return _ships.empty();
 }
 
-PlaceableShip PlaceableShipCollection::getShip(int index) {
+PlaceableShip &PlaceableShipCollection::getShip(int index) {
     return _ships.at(index);
 }
 
+int PlaceableShipCollection::getShipNum() {
+    return _ships.size();
+}
+
+void PlaceableShipCollection::removeShip(int index) {
+    _ships.erase(_ships.begin() + index);
+}
 
 class GameRenderer {
 public:
@@ -495,46 +508,46 @@ public:
     bool setup(RenderWindow &window); // Returns true is set up was finished
 };
 
-GameRenderer::GameRenderer(bool human, BattleshipBoard &board): _boardRenderer(board, human ? 25 : 825, 50),
-        _placeableShipCollection(human, _boardRenderer, board), _statusShipCollection(human, board){
-
-    _human = human;
-    _spaceCount = 0;
-}
-
-void GameRenderer::drawGame(RenderWindow &window) {
-    _boardRenderer.drawBoard(window, !_human);
-    _statusShipCollection.drawShips(window);
-}
-
-void GameRenderer::drawSetup(RenderWindow &window) {
-    _boardRenderer.drawBoard(window, !_human);
-    _placeableShipCollection.drawShips(window);
-};
-
-bool GameRenderer::setup(RenderWindow &window) {
-    Vector2i mousePos = sf::Mouse::getPosition(window);
-    int mouseX = mousePos.x;
-    int mouseY = mousePos.y;
-
-    if(Mouse::isButtonPressed(sf::Mouse::Left)) {
-        _placeableShipCollection.handleClick(window, mouseX, mouseY);
-    }
-
-    if(Keyboard::isKeyPressed(sf::Keyboard::Space)) {
-        _spaceCount += 1;
-    } else {
-        _spaceCount = 0;
-    }
-
-    if(_spaceCount == 1) {
-        _placeableShipCollection.rotateActiveShip();
-    }
-
-    _placeableShipCollection.updateMousePos(mouseX, mouseY);
-
-    return _placeableShipCollection.allPlaced();
-}
+//GameRenderer::GameRenderer(bool human, BattleshipBoard &board): _boardRenderer(board, human ? 25 : 825, 50),
+//        _placeableShipCollection(human, _boardRenderer, board), _statusShipCollection(human, board){
+//
+//    _human = human;
+//    _spaceCount = 0;
+//}
+//
+//void GameRenderer::drawGame(RenderWindow &window) {
+//    _boardRenderer.drawBoard(window, !_human);
+//    _statusShipCollection.drawShips(window);
+//}
+//
+//void GameRenderer::drawSetup(RenderWindow &window) {
+//    _boardRenderer.drawBoard(window, !_human);
+//    _placeableShipCollection.drawShips(window);
+//};
+//
+//bool GameRenderer::setup(RenderWindow &window) {
+//    Vector2i mousePos = sf::Mouse::getPosition(window);
+//    int mouseX = mousePos.x;
+//    int mouseY = mousePos.y;
+//
+//    if(Mouse::isButtonPressed(sf::Mouse::Left)) {
+//        _placeableShipCollection.handleClick(window, mouseX, mouseY);
+//    }
+//
+//    if(Keyboard::isKeyPressed(sf::Keyboard::Space)) {
+//        _spaceCount += 1;
+//    } else {
+//        _spaceCount = 0;
+//    }
+//
+//    if(_spaceCount == 1) {
+//        _placeableShipCollection.rotateActiveShip();
+//    }
+//
+//    _placeableShipCollection.updateMousePos(mouseX, mouseY);
+//
+//    return _placeableShipCollection.allPlaced();
+//}
 
 // Holds the board, collections of ships, and renderer for a player
 class Player {
@@ -545,12 +558,18 @@ public:
     virtual void getMove();
 
 protected:
-    GameRenderer _gameRenderer;
     BattleshipBoard _board;
 
+    BoardRenderer _boardRenderer;
+    PlaceableShipCollection _placeableShipCollection;
+    StatusShipCollection _statusShipCollection;
+
+    static const int HUMAN_BOARD_X_POS = 25;
+    static const int COMPUTER_BOARD_X_POS = 825;
 };
 
-Player::Player(bool human) : _gameRenderer(human, _board) {}
+Player::Player(bool human) : _boardRenderer(_board, human ? HUMAN_BOARD_X_POS : COMPUTER_BOARD_X_POS, 50),
+        _placeableShipCollection(human, _boardRenderer, _board), _statusShipCollection(human, _board) {}
 
 void Player::placeShips() {
     cout << "Derived classes must define the placeShips method" << endl;
@@ -565,44 +584,130 @@ class HumanPlayer : public Player {
 public:
     HumanPlayer();
 
-    void placeShips(RenderWindow &window);
-    void getMove();
+    bool placeShips(RenderWindow &window);
+    void getMove() override;
+
+    void updateSpacePress();
+    bool spacePressed();
+
+    void handleClick(RenderWindow &window, Vector2i mousePos);
+    void selectShip(RenderWindow &window, Vector2i mousePos);
+    void lockShip(RenderWindow &window, Vector2i mousePos);
+    void updateShipPos(Vector2i mousePos);
+    void rotateShip();
 
     int _spaceCount;
+    int _activeIndex;
+    double _activeOffsetX;
+    double _activeOffsetY;
 };
 
 HumanPlayer::HumanPlayer() : Player(true) {
+    _activeIndex = -1;
     _spaceCount = 0;
 }
 
-void HumanPlayer::placeShips(RenderWindow &window) {
-//    // Drawing should implicitly be part of this
-//
-//    Vector2i mousePos = sf::Mouse::getPosition(window);
-//    int mouseX = mousePos.x;
-//    int mouseY = mousePos.y;
-//
-//    if(Mouse::isButtonPressed(sf::Mouse::Left)) {
-//        _gameRenderer.handleClick(window, mouseX, mouseY);
-//    }
-//
-//    if(Keyboard::isKeyPressed(sf::Keyboard::Space)) {
-//        _spaceCount += 1;
-//    } else {
-//        _spaceCount = 0;
-//    }
-//
-//    if(_spaceCount == 1) {
-//        _gameRenderer.rotateActiveShip();
-//    }
-//
-//    _gameRenderer.updateMousePos(mouseX, mouseY);
-//
-//    return _gameRenderer.allPlaced();
+void HumanPlayer::getMove() {
+    // Add code for detecting and drawing on the board here
 }
 
-void HumanPlayer::getMove() {
-    cout << "Getting the move..." << endl;
+void HumanPlayer::updateSpacePress() {
+    if(Keyboard::isKeyPressed(sf::Keyboard::Space)) {
+        _spaceCount += 1;
+    } else {
+        _spaceCount = 0;
+    }
+}
+
+bool HumanPlayer::spacePressed() {
+    return _spaceCount == 1;
+}
+
+bool HumanPlayer::placeShips(RenderWindow &window) {
+    _boardRenderer.drawBoard(window, false);
+    _placeableShipCollection.drawShips(window);
+    
+    Vector2i mousePos = sf::Mouse::getPosition(window);
+    updateSpacePress();
+
+    updateShipPos(mousePos);
+
+    if(Mouse::isButtonPressed(sf::Mouse::Left)) {
+        handleClick(window, mousePos);
+    }
+
+    if(spacePressed()) {
+        rotateShip();
+    }
+
+    return _placeableShipCollection.allPlaced();
+}
+
+void HumanPlayer::handleClick(RenderWindow &window, Vector2i mousePos) {
+    if(_activeIndex == -1) {
+        selectShip(window, mousePos);
+    } else {
+        lockShip(window, mousePos);
+    }
+}
+
+void HumanPlayer::selectShip(RenderWindow &window, Vector2i mousePos) {
+    for(int i = 0; i < _placeableShipCollection.getShipNum(); i++) {
+        PlaceableShip currentShip = _placeableShipCollection.getShip(i);
+
+        if(currentShip.contains(mousePos)) {
+            _activeIndex = i;
+
+            _activeOffsetX = -mousePos.x + currentShip.getX();
+            _activeOffsetY = -mousePos.y + currentShip.getY();
+
+            window.setMouseCursorVisible(false);
+        }
+    }
+}
+
+void HumanPlayer::lockShip(RenderWindow &window, Vector2i mousePos) {
+    PlaceableShip currentShip = _placeableShipCollection.getShip(_activeIndex);
+
+    pair<int, int> gridPos = _boardRenderer.getGridPos(mousePos.x + _activeOffsetX, mousePos.y + _activeOffsetY);
+
+    int rowPos = gridPos.first;
+    int columnPos = gridPos.second;
+
+    if(_board.shipFits(currentShip, rowPos, columnPos)) {
+        _board.placeShip(currentShip, rowPos, columnPos);
+        _placeableShipCollection.removeShip(_activeIndex);
+
+        _activeIndex = -1;
+
+        window.setMouseCursorVisible(true);
+    }
+}
+
+void HumanPlayer::updateShipPos(Vector2i mousePos) {
+    if(_activeIndex != -1) {
+        cout << "Running this code" << endl;
+        double xPos = mousePos.x + _activeOffsetX ;
+        double yPos = mousePos.y + _activeOffsetY;
+
+        pair<int, int> gridPos = _boardRenderer.getGridPos(xPos, yPos);
+
+        int rowPos = gridPos.first;
+        int columnPos = gridPos.second;
+
+        if(_board.shipFits(_placeableShipCollection.getShip(_activeIndex), rowPos, columnPos)) {
+            xPos = rowPos * 50 + _boardRenderer.x;
+            yPos = columnPos * 50 + _boardRenderer.y;
+        }
+
+        cout << xPos << ", " << yPos << endl;
+
+        _placeableShipCollection.getShip(_activeIndex).updatePos(xPos, yPos);
+    }
+}
+
+void HumanPlayer::rotateShip() {
+    _placeableShipCollection.getShip(_activeIndex).rotate();
 }
 
 class ComputerPlayer : public Player {
@@ -630,11 +735,13 @@ int main() {
     // set the title to be "SFML Example Window"
     RenderWindow window( VideoMode(1625, 700), "SFML Example Window" );
 
-    BattleshipBoard myBoard;
+    HumanPlayer humanPlayer;
+
+    //BattleshipBoard myBoard;
     BattleshipBoard opponentBoard;
 
-    GameRenderer myRenderer(true, myBoard);
-    GameRenderer opponentRenderer(false, opponentBoard);
+    //GameRenderer myRenderer(true, myBoard);
+    //GameRenderer opponentRenderer(false, opponentBoard);
 
     enum STATE {SETUP, COMPUTER_SETUP, PLAYER_TURN, COMPUTER_TURN};
 
@@ -646,9 +753,9 @@ int main() {
         window.setFramerateLimit(0);
 
         if(state == SETUP) {
-            myRenderer.drawSetup(window);
+            bool allShipsPlaced = humanPlayer.placeShips(window);
 
-            if(myRenderer.setup(window)) {
+            if(allShipsPlaced) {
                 state = COMPUTER_SETUP;
             }
         }
