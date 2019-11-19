@@ -224,7 +224,7 @@ bool TrackingBoard::validShot(int xPos, int yPos) {
 
 class Player {
 public:
-    Player(vector<int> shipLengths);
+    Player(string name, vector<int> shipLengths);
 
     void bindTrackingFleets(Player *opponent);
     virtual void setTrackingFleet(vector<Ship> *opponentFleet);
@@ -233,6 +233,7 @@ public:
     TrackingBoard trackingBoard;
     vector<Ship> primaryFleet;
     vector<Ship> *trackingFleet;
+    string name;
 
     virtual pair<int, int> getMove();
     virtual void placeShips();
@@ -244,13 +245,14 @@ public:
     bool allShipsSunk();
 };
 
-Player::Player(vector<int> shipLengths) {
+Player::Player(string name, vector<int> shipLengths) {
     for(int i = 0; i < shipLengths.size(); i++) {
         Ship newShip(shipLengths.at(i));
 
         primaryFleet.push_back(newShip);
     }
 
+    this->name = name;
 
 }
 
@@ -601,7 +603,7 @@ void PrimaryBoardRenderer::rotateShip() {
 
 class HumanSFMLPlayer : public Player {
 public:
-    HumanSFMLPlayer(vector<int> shipLengths);
+    HumanSFMLPlayer(string name, vector<int> shipLengths);
 
     RenderWindow window;
     PrimaryBoardRenderer pBoardRenderer;
@@ -613,7 +615,7 @@ public:
     void placeShips() override;
 };
 
-HumanSFMLPlayer::HumanSFMLPlayer(vector<int> shipLengths) : Player(shipLengths),
+HumanSFMLPlayer::HumanSFMLPlayer(string name, vector<int> shipLengths) : Player(name, shipLengths),
                                                             pBoardRenderer(window, primaryBoard, primaryFleet, 25, 50),
                                                             window(VideoMode(1625, 700), "SFML Example Window"){}
 
@@ -750,7 +752,7 @@ void Battlelog::recordWinner(string name) {
 template<typename p1Type, typename p2Type>
 class Game {
 public:
-    Game(vector<int> shipLengths = DEFAULT_LENGTHS, string battlelogName = "battelog.txt");
+    Game(string p1name, string p2name, vector<int> shipLengths = DEFAULT_LENGTHS, string battlelogName = "battelog.txt");
 
     p1Type playerOne;
     p2Type playerTwo;
@@ -767,7 +769,8 @@ template<typename p1Type, typename p2Type>
 const vector<int> Game<p1Type, p2Type>::DEFAULT_LENGTHS = {5, 4, 4, 3, 2};
 
 template<typename p1Type, typename p2Type>
-Game<p1Type, p2Type>::Game(vector<int> shipLengths, string battlelogName) : playerOne(shipLengths), playerTwo(shipLengths), battlelog(battlelogName) {
+Game<p1Type, p2Type>::Game(string p1Name, string p2name, vector<int> shipLengths, string battlelogName) : playerOne(p1Name, shipLengths),
+        playerTwo(p2name, shipLengths), battlelog(battlelogName) {
     turn = 1;
     playerOne.bindTrackingFleets(&playerTwo);
 }
@@ -777,14 +780,14 @@ void Game<p1Type, p2Type>::runGame() {
     playerOne.placeShips();
 
     if(!playerOne.allShipsPlaced()) {
-        cerr << "Player One Failed to place all their ships" << endl;
+        cerr << playerOne.name <<  " failed to place all their ships" << endl;
         return;
     }
 
     playerTwo.placeShips();
 
     if(!playerTwo.allShipsPlaced()) {
-        cerr << "Player Two failed to place all their ships" << endl;
+        cerr << playerTwo.name << " failed to place all their ships" << endl;
         return;
     }
 
@@ -793,17 +796,17 @@ void Game<p1Type, p2Type>::runGame() {
             pair<int, int> move = playerOne.getMove();
 
             if(move.first < 0) {
-                cerr << "Player one has forfeited the match" << endl;
+                cerr << playerOne.name << " has forfeited the match" << endl;
                 return;
             }
 
             Board::ShotOutcome outcome = playerTwo.fireShotAt(move.first, move.second);
             playerOne.markShot(move.first, move.second, outcome);
-            battlelog.recordMove("Player One", move.first, move.second, outcome);
+            battlelog.recordMove(playerOne.name, move.first, move.second, outcome);
 
             if(playerTwo.allShipsSunk()) {
-                battlelog.recordWinner("Player One");
-                cerr << "Player One wins" << endl;
+                battlelog.recordWinner(playerOne.name);
+                cerr << playerOne.name << " wins" << endl;
                 return;
             }
 
@@ -812,17 +815,17 @@ void Game<p1Type, p2Type>::runGame() {
             pair<int, int> move = playerTwo.getMove();
 
             if(move.first < 0) {
-                cerr << "Player two has forfeited the match" << endl;
+                cerr << playerTwo.name << " has forfeited the match" << endl;
                 return;
             }
 
             Board::ShotOutcome outcome = playerOne.fireShotAt(move.first, move.second);
             playerTwo.markShot(move.first, move.second, outcome);
-            battlelog.recordMove("Player Two", move.first, move.second, outcome);
+            battlelog.recordMove(playerTwo.name, move.first, move.second, outcome);
 
             if(playerOne.allShipsSunk()) {
-                battlelog.recordWinner("Player Two");
-                cerr << "Player Two wins" << endl;
+                battlelog.recordWinner(playerTwo.name);
+                cerr << playerTwo.name << " wins" << endl;
                 return;
             }
 
@@ -834,7 +837,7 @@ void Game<p1Type, p2Type>::runGame() {
 int main() {
     vector<int> shipLengths = {1, 1, 1, 1, 1, 1};
 
-    Game<HumanSFMLPlayer, ComputerRandomPlayer> game;
+    Game<HumanSFMLPlayer, ComputerRandomPlayer> game("Human", "Computer");
 
     game.runGame();
 }
