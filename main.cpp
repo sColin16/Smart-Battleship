@@ -8,6 +8,8 @@ using namespace std;                            // using the standard namespace
 #include <SFML/Graphics.hpp>                    // include the SFML Graphics Library
 using namespace sf;                             // using the sf namespace
 
+#include <fstream>
+#include <string>
 #include <utility>
 
 enum Orientation {HORIZONTAL, VERTICAL};
@@ -77,6 +79,9 @@ void Ship::markAsHit(int xPos, int yPos) {
 
     // Change its value to true
     square->second = true;
+
+    // Update the ship's sunk status
+    _sunk = isSunk();
 }
 
 bool Ship::isPlaced() {
@@ -103,7 +108,8 @@ public:
 
     static const int GRID_SIZE = 10; // In theory, this could be changed to be a parameter, although renderer class probably couldnt handle that easily
 
-    enum SquareState {BLANK, SHIP, HIT, MISS};
+    enum SquareState {BLANK, SHIP, HIT_MARKER, MISS_MARKER};
+    enum ShotOutcome {HIT, MISS, SUNK};
 
     friend class BoardRenderer<Board>;
 
@@ -129,7 +135,7 @@ class PrimaryBoard : Board {
 public:
     using Board::Board; // Inheret the constructor of the Board class
 
-    bool fireShotAt(int xPos, int yPos); // Returns true is shot is a hit, false if a miss (must check validity first)
+    Board::ShotOutcome fireShotAt(int xPos, int yPos); // Returns true is shot is a hit, false if a miss (must check validity first)
     bool shipFits(Ship ship);
     void placeShip(Ship *ship); // Pas by reference to store reference to the ship so the board can sink it when appropropriate
 
@@ -137,16 +143,32 @@ public:
 };
 
 
-bool PrimaryBoard::fireShotAt(int xPos, int yPos) {
-    _grid.at(xPos).at(yPos) = _grid.at(xPos).at(yPos) == SHIP ? HIT : MISS;
+Board::ShotOutcome PrimaryBoard::fireShotAt(int xPos, int yPos) {
+    _grid.at(xPos).at(yPos) = _grid.at(xPos).at(yPos) == SHIP ? HIT_MARKER : MISS_MARKER;
+
+    bool sunk = false;
 
     for(int i = 0; i < _fleet.size(); i++) {
         if(_fleet.at(i)->_squares.count(make_pair(xPos, yPos))) {
             _fleet.at(i)->markAsHit(xPos, yPos);
+
+            if(_fleet.at(i)->_sunk) {
+                sunk = true;
+            }
         }
     }
 
-    return _grid.at(xPos).at(yPos) == HIT;
+    ShotOutcome outcome;
+
+    if(sunk) {
+        outcome = SUNK;
+    } else if(_grid.at(xPos).at(yPos) == HIT_MARKER) {
+        outcome = HIT;
+    } else {
+        outcome = MISS;
+    };
+
+    return outcome;
 }
 
 bool PrimaryBoard::shipFits(Ship ship) {
@@ -181,20 +203,17 @@ void PrimaryBoard::placeShip(Ship *ship) {
 class TrackingBoard : Board {
 public:
     using Board::Board;
-    void markShot(int xPos, int yPos, bool hit);
+    void markShot(int xPos, int yPos, Board::ShotOutcome outcome);
     bool validShot(int xPos, int yPos); // Returns true if guess is valid (in grid and not already guessed) called by tracking grids, primarily
 
     friend class BoardRenderer<TrackingBoard>;
 };
 
-
-void TrackingBoard::markShot(int xPos, int yPos, bool hit) {
-    _grid.at(xPos).at(yPos) = hit ? HIT : MISS;
-
-    for(int i = 0; i < _fleet.size(); i++) {
-        if(_fleet.at(i)->_squares.count(make_pair(xPos, yPos))) {
-            _fleet.at(i)->markAsHit(xPos, yPos);
-        }
+void TrackingBoard::markShot(int xPos, int yPos, Board::ShotOutcome outcome) {
+    if(outcome == HIT || outcome == SUNK) {
+        _grid.at(xPos).at(yPos) = HIT_MARKER;
+    } else {
+        _grid.at(xPos).at(yPos) = MISS_MARKER;
     }
 }
 
@@ -218,8 +237,8 @@ public:
     virtual pair<int, int> getMove();
     virtual void placeShips();
 
-    bool fireShotAt(int xPos, int yPos);
-    void markShot(int xPos, int yPos, bool hit);
+    Board::ShotOutcome fireShotAt(int xPos, int yPos);
+    void markShot(int xPos, int yPos, Board::ShotOutcome outcome);
 
     bool allShipsPlaced();
     bool allShipsSunk();
@@ -247,12 +266,12 @@ void Player::setTrackingFleet(vector<Ship> *opponentFleet) {
 pair<int, int> Player::getMove(){}
 void Player::placeShips(){}
 
-bool Player::fireShotAt(int xPos, int yPos) {
+Board::ShotOutcome Player::fireShotAt(int xPos, int yPos) {
     return primaryBoard.fireShotAt(xPos, yPos);
 }
 
-void Player::markShot(int xPos, int yPos, bool hit) {
-    trackingBoard.markShot(xPos, yPos, hit);
+void Player::markShot(int xPos, int yPos, Board::ShotOutcome outcome) {
+    trackingBoard.markShot(xPos, yPos, outcome);
 }
 
 bool Player::allShipsPlaced() {
@@ -429,7 +448,7 @@ void BoardRenderer<BoardType>::draw(bool placingShips) {
 
             Color color;
 
-            if (value == Board::BLANK || value == Board::MISS) {
+            if (value == Board::BLANK || value == Board::MISS_MARKER) {
                 color = Color::Blue;
             } else {
                 color = Color(120, 120, 120);
@@ -442,10 +461,10 @@ void BoardRenderer<BoardType>::draw(bool placingShips) {
             square.setOutlineThickness(2);
             _window->draw(square);
 
-            if (value == Board::MISS || value == Board::HIT) {
+            if (value == Board::MISS_MARKER || value == Board::HIT_MARKER) {
                 CircleShape marker(20, 20);
                 marker.setPosition(_dispX + 5 + 50 * i, _dispY + 5 + 50 * j);
-                marker.setFillColor(value == Board::MISS ? Color::White : Color::Red);
+                marker.setFillColor(value == Board::MISS_MARKER ? Color::White : Color::Red);
                 _window->draw(marker);
             }
         }
@@ -722,7 +741,7 @@ void Game<p1Type, p2Type>::runGame() {
                 return;
             }
 
-            bool hit = playerTwo.fireShotAt(move.first, move.second);
+            Board::ShotOutcome hit = playerTwo.fireShotAt(move.first, move.second);
             playerOne.markShot(move.first, move.second, hit);
 
             if(playerTwo.allShipsSunk()) {
@@ -739,7 +758,7 @@ void Game<p1Type, p2Type>::runGame() {
                 return;
             }
 
-            bool hit = playerOne.fireShotAt(move.first, move.second);
+            Board::ShotOutcome hit = playerOne.fireShotAt(move.first, move.second);
             playerTwo.markShot(move.first, move.second, hit);
 
             if(playerOne.allShipsSunk()) {
@@ -753,9 +772,9 @@ void Game<p1Type, p2Type>::runGame() {
 }
 
 int main() {
-    vector<int> shipLengths = {1, 1, 1};
+    vector<int> shipLengths = {1, 1, 1, 1, 1, 1};
 
-    Game<HumanSFMLPlayer, ComputerRandomPlayer> game;
+    Game<HumanSFMLPlayer, ComputerRandomPlayer> game(shipLengths);
 
     game.runGame();
 }
