@@ -9,6 +9,7 @@ using namespace std;                            // using the standard namespace
 using namespace sf;                             // using the sf namespace
 
 #include <fstream>
+#include <iomanip>
 #include <string>
 #include <utility>
 
@@ -698,25 +699,42 @@ pair<int, int> HumanSFMLPlayer::getMove() {
 // Handles doing the file input/output stuff that is required for the project
 class Battlelog {
 public:
-    Battlelog(string filename);
+    Battlelog(string filename, string p1Name, string p2Nmae);
     ~Battlelog();
 
     ofstream battlelogFile;
 
+    bool firstPlayer;
+
     char convertYPos(int yPos);
     int convertXPos(int xPos);
     string getOutcomeString(Board::ShotOutcome outcome);
+
+    void writeSeparator();
+    void writeName(string name);
+    void writeMove(int xPos, int yPos, Board::ShotOutcome outcome);
+
     void recordMove(string name, int xPos, int yPos, Board::ShotOutcome outcome);
     void recordWinner(string name);
 };
 
-Battlelog::Battlelog(string filename) {
+Battlelog::Battlelog(string filename, string p1Name, string p2Name) {
     battlelogFile.open(filename);
 
+    firstPlayer = true;
+
     if(!battlelogFile) {
-        cerr << "Failed to open the battelog" << endl;
+        cerr << "Failed to open the battlelog" << endl;
         return;
     }
+
+    writeSeparator();
+    writeName(p1Name);
+    writeName(p2Name);
+
+    battlelogFile << "|" << endl;
+
+    writeSeparator();
 }
 
 Battlelog::~Battlelog() {
@@ -741,11 +759,40 @@ string Battlelog::getOutcomeString(Board::ShotOutcome outcome) {
     }
 }
 
+void Battlelog::writeSeparator() {
+    battlelogFile << "|" << setw(25) << setfill('=') << "" << "|" << endl;
+}
+
+void Battlelog::writeName(string name) {
+    battlelogFile << "| " << setw(10) << setfill(' ') << left << name << " ";
+}
+
+void Battlelog::writeMove(int xPos, int yPos, Board::ShotOutcome outcome) {
+    battlelogFile << " " << setw(5) << setfill(' ') << left << (convertYPos(yPos) + to_string(convertXPos(xPos)));
+    battlelogFile << " " << setw(4) << setfill(' ') << right << getOutcomeString(outcome) << " |";
+}
+
 void Battlelog::recordMove(string name, int xPos, int yPos, Board::ShotOutcome outcome) {
-    battlelogFile << name << " called " << convertYPos(yPos) << convertXPos(xPos) << ": " << getOutcomeString(outcome) << endl;
+    if(firstPlayer) {
+        battlelogFile << "|";
+    }
+
+    writeMove(xPos, yPos, outcome);
+
+    if(!firstPlayer) {
+        battlelogFile << endl;
+    }
+
+    firstPlayer = !firstPlayer;
 }
 
 void Battlelog::recordWinner(string name) {
+    if(!firstPlayer) { // This really means if the first player just won
+        battlelogFile << setw(12) << setfill(' ') << "" << "|" << endl;
+    }
+
+    writeSeparator();
+    battlelogFile << endl;
     battlelogFile << name << " wins!" << endl;
 }
 
@@ -769,8 +816,8 @@ template<typename p1Type, typename p2Type>
 const vector<int> Game<p1Type, p2Type>::DEFAULT_LENGTHS = {5, 4, 4, 3, 2};
 
 template<typename p1Type, typename p2Type>
-Game<p1Type, p2Type>::Game(string p1Name, string p2name, vector<int> shipLengths, string battlelogName) : playerOne(p1Name, shipLengths),
-        playerTwo(p2name, shipLengths), battlelog(battlelogName) {
+Game<p1Type, p2Type>::Game(string p1Name, string p2Name, vector<int> shipLengths, string battlelogName) : playerOne(p1Name, shipLengths),
+        playerTwo(p2Name, shipLengths), battlelog(battlelogName, p1Name, p2Name) {
     turn = 1;
     playerOne.bindTrackingFleets(&playerTwo);
 }
