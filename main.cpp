@@ -693,14 +693,70 @@ pair<int, int> HumanSFMLPlayer::getMove() {
     }
 }
 
+// Handles doing the file input/output stuff that is required for the project
+class Battlelog {
+public:
+    Battlelog(string filename);
+    ~Battlelog();
+
+    ofstream battlelogFile;
+
+    char convertYPos(int yPos);
+    int convertXPos(int xPos);
+    string getOutcomeString(Board::ShotOutcome outcome);
+    void recordMove(string name, int xPos, int yPos, Board::ShotOutcome outcome);
+    void recordWinner(string name);
+};
+
+Battlelog::Battlelog(string filename) {
+    battlelogFile.open(filename);
+
+    if(!battlelogFile) {
+        cerr << "Failed to open the battelog" << endl;
+        return;
+    }
+}
+
+Battlelog::~Battlelog() {
+    battlelogFile.close();
+}
+
+char Battlelog::convertYPos(int yPos) {
+    return yPos + 'A';
+}
+
+int Battlelog::convertXPos(int xPos) {
+    return xPos + 1;
+}
+
+string Battlelog::getOutcomeString(Board::ShotOutcome outcome) {
+    if(outcome == Board::SUNK) {
+        return "SUNK";
+    } else if(outcome == Board::HIT) {
+        return "HIT";
+    } else {
+        return "MISS";
+    }
+}
+
+void Battlelog::recordMove(string name, int xPos, int yPos, Board::ShotOutcome outcome) {
+    battlelogFile << name << " called " << convertYPos(yPos) << convertXPos(xPos) << ": " << getOutcomeString(outcome) << endl;
+}
+
+void Battlelog::recordWinner(string name) {
+    battlelogFile << name << " wins!" << endl;
+}
+
 template<typename p1Type, typename p2Type>
 class Game {
 public:
-    Game(vector<int> shipLengths = DEFAULT_LENGTHS);
+    Game(vector<int> shipLengths = DEFAULT_LENGTHS, string battlelogName = "battelog.txt");
 
     p1Type playerOne;
     p2Type playerTwo;
     int turn;
+
+    Battlelog battlelog;
 
     void runGame();
 
@@ -711,7 +767,7 @@ template<typename p1Type, typename p2Type>
 const vector<int> Game<p1Type, p2Type>::DEFAULT_LENGTHS = {5, 4, 4, 3, 2};
 
 template<typename p1Type, typename p2Type>
-Game<p1Type, p2Type>::Game(vector<int> shipLengths) : playerOne(shipLengths), playerTwo(shipLengths) {
+Game<p1Type, p2Type>::Game(vector<int> shipLengths, string battlelogName) : playerOne(shipLengths), playerTwo(shipLengths), battlelog(battlelogName) {
     turn = 1;
     playerOne.bindTrackingFleets(&playerTwo);
 }
@@ -741,10 +797,12 @@ void Game<p1Type, p2Type>::runGame() {
                 return;
             }
 
-            Board::ShotOutcome hit = playerTwo.fireShotAt(move.first, move.second);
-            playerOne.markShot(move.first, move.second, hit);
+            Board::ShotOutcome outcome = playerTwo.fireShotAt(move.first, move.second);
+            playerOne.markShot(move.first, move.second, outcome);
+            battlelog.recordMove("Player One", move.first, move.second, outcome);
 
             if(playerTwo.allShipsSunk()) {
+                battlelog.recordWinner("Player One");
                 cerr << "Player One wins" << endl;
                 return;
             }
@@ -758,10 +816,12 @@ void Game<p1Type, p2Type>::runGame() {
                 return;
             }
 
-            Board::ShotOutcome hit = playerOne.fireShotAt(move.first, move.second);
-            playerTwo.markShot(move.first, move.second, hit);
+            Board::ShotOutcome outcome = playerOne.fireShotAt(move.first, move.second);
+            playerTwo.markShot(move.first, move.second, outcome);
+            battlelog.recordMove("Player Two", move.first, move.second, outcome);
 
             if(playerOne.allShipsSunk()) {
+                battlelog.recordWinner("Player Two");
                 cerr << "Player Two wins" << endl;
                 return;
             }
@@ -774,7 +834,7 @@ void Game<p1Type, p2Type>::runGame() {
 int main() {
     vector<int> shipLengths = {1, 1, 1, 1, 1, 1};
 
-    Game<HumanSFMLPlayer, ComputerRandomPlayer> game(shipLengths);
+    Game<HumanSFMLPlayer, ComputerRandomPlayer> game;
 
     game.runGame();
 }
