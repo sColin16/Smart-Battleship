@@ -167,7 +167,7 @@ Board::ShotOutcome PrimaryBoard::fireShotAt(int xPos, int yPos) {
         outcome = HIT;
     } else {
         outcome = MISS;
-    };
+    }
 
     return outcome;
 }
@@ -236,8 +236,8 @@ public:
     vector<Ship> *trackingFleet;
     string name;
 
-    virtual pair<int, int> getMove();
-    virtual void placeShips();
+    virtual pair<int, int> getMove() = 0;
+    virtual void placeShips() = 0;
 
     Board::ShotOutcome fireShotAt(int xPos, int yPos);
     void markShot(int xPos, int yPos, Board::ShotOutcome outcome);
@@ -265,9 +265,6 @@ void Player::bindTrackingFleets(Player *opponent) {
 void Player::setTrackingFleet(vector<Ship> *opponentFleet) {
     trackingFleet = opponentFleet;
 }
-
-pair<int, int> Player::getMove(){}
-void Player::placeShips(){}
 
 Board::ShotOutcome Player::fireShotAt(int xPos, int yPos) {
     return primaryBoard.fireShotAt(xPos, yPos);
