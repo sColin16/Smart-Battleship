@@ -27,6 +27,7 @@ public:
     void markAsHit(int xPos, int yPos);
     bool isPlaced();
     bool isSunk();
+    bool contains(int xPos, int yPos);
 
     friend class Board;
     friend class PrimaryBoard;
@@ -35,6 +36,8 @@ public:
     friend class ShipRenderer;
 
 private:
+    void checkIfSunk();
+
     map<pair<int ,int>, bool> _squares;
     bool _sunk;
     bool _placed;
@@ -81,8 +84,8 @@ void Ship::markAsHit(int xPos, int yPos) {
     // Change its value to true
     square->second = true;
 
-    // Update the ship's sunk status
-    _sunk = isSunk();
+    checkIfSunk();
+
 }
 
 bool Ship::isPlaced() {
@@ -90,18 +93,104 @@ bool Ship::isPlaced() {
 }
 
 bool Ship::isSunk() {
-    if(_squares.empty()) {
-        return false;
-    }
+    return _sunk;
+}
+
+bool Ship::contains(int xPos, int yPos) {
+    return _squares.count(make_pair(xPos, yPos));
+}
+
+void Ship::checkIfSunk() {
+    _sunk = true;
 
     for(auto &square : _squares) {
         if(!square.second) {
+            _sunk = false;
+            break;
+        }
+    }
+}
+
+class Fleet {
+public:
+    Fleet();
+    Fleet(vector<int> lengths);
+
+    //void addShip(Ship &ship); // Shouldn't need this function. Make sure board points to the fleet
+    bool markShipHit(int xPos, int yPos); // Return if the ship was hit or not
+
+    int size(); // Returns the size of the fleet
+    Ship &ship(int index);
+    Ship lastSunken(); // What to return if no ship has been sunk yet?
+
+    bool allPlaced();
+    bool allSunk();
+
+private:
+    vector<Ship> _ships;
+    int _lastSunkenIndex;
+};
+
+Fleet::Fleet() {
+    _lastSunkenIndex = -1;
+}
+
+Fleet::Fleet(vector<int> lengths) : Fleet() {
+    for(int i = 0; i < lengths.size(); i++) {
+        Ship newShip(lengths.at(i));
+
+        _ships.push_back(newShip);
+    }
+}
+
+bool Fleet::markShipHit(int xPos, int yPos) {
+    for(int i = 0; i < _ships.size(); i++) {
+        if(_ships.at(i).contains(xPos, yPos)) {
+            _ships.at(i).markAsHit(xPos, yPos);
+
+            bool sunken = _ships.at(i).isSunk();
+
+            if(sunken) {
+                _lastSunkenIndex = i;
+            }
+
+            return sunken;
+        }
+    }
+}
+
+int Fleet::size() {
+    return _ships.size();
+};
+
+Ship &Fleet::ship(int index) {
+    return _ships.at(index);
+}
+
+Ship Fleet::lastSunken() {
+    return _ships.at(_lastSunkenIndex);
+}
+
+bool Fleet::allPlaced() {
+    for(int i = 0; i < _ships.size(); i++) {
+        if(!_ships.at(i).isPlaced()) {
             return false;
         }
     }
 
     return true;
 }
+
+bool Fleet::allSunk() {
+    for(int i = 0; i < _ships.size(); i++) {
+        if(!_ships.at(i).isSunk()) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 
 class Board {
 public:
@@ -116,7 +205,7 @@ public:
 
 protected:
     vector<vector<SquareState>> _grid; // We intialize this in the constructor
-    vector<Ship *> _fleet;               // We leave this empty until ships are placed on the grid
+    //vector<Ship *> _fleet;               // We leave this empty until ships are placed on the grid
 
     bool posInGrid(int xPos, int yPos); // Checks that a shot is within the bounds of the board
 };
@@ -134,42 +223,41 @@ bool Board::posInGrid(int xPos, int yPos){
 
 class PrimaryBoard : Board {
 public:
+    PrimaryBoard(Fleet &fleet);
     using Board::Board; // Inheret the constructor of the Board class
 
     Board::ShotOutcome fireShotAt(int xPos, int yPos); // Returns true is shot is a hit, false if a miss (must check validity first)
     bool shipFits(Ship ship);
     void placeShip(Ship *ship); // Pas by reference to store reference to the ship so the board can sink it when appropropriate
+    Board::ShotOutcome getOutcome(bool sunk, SquareState finalState);
+
+    Fleet *_fleet;
 
     friend class BoardRenderer<PrimaryBoard>;
+
 };
+
+PrimaryBoard::PrimaryBoard(Fleet &fleet) : Board() {
+    _fleet = &fleet;
+}
+
+Board::ShotOutcome PrimaryBoard::getOutcome(bool sunk, SquareState finalState) {
+    if(sunk) {
+        return SUNK;
+    } else if(finalState == HIT_MARKER) {
+        return HIT;
+    }
+
+    return MISS;
+}
 
 
 Board::ShotOutcome PrimaryBoard::fireShotAt(int xPos, int yPos) {
     _grid.at(xPos).at(yPos) = _grid.at(xPos).at(yPos) == SHIP ? HIT_MARKER : MISS_MARKER;
 
-    bool sunk = false;
+    bool sunk = _fleet->markShipHit(xPos, yPos);
 
-    for(int i = 0; i < _fleet.size(); i++) {
-        if(_fleet.at(i)->_squares.count(make_pair(xPos, yPos))) {
-            _fleet.at(i)->markAsHit(xPos, yPos);
-
-            if(_fleet.at(i)->_sunk) {
-                sunk = true;
-            }
-        }
-    }
-
-    ShotOutcome outcome;
-
-    if(sunk) {
-        outcome = SUNK;
-    } else if(_grid.at(xPos).at(yPos) == HIT_MARKER) {
-        outcome = HIT;
-    } else {
-        outcome = MISS;
-    }
-
-    return outcome;
+    return getOutcome(sunk, _grid.at(xPos).at(yPos));
 }
 
 bool PrimaryBoard::shipFits(Ship ship) {
@@ -196,7 +284,6 @@ void PrimaryBoard::placeShip(Ship *ship) {
     }
 
     ship->_placed = true;
-    _fleet.push_back(ship);
 }
 
 
@@ -228,12 +315,12 @@ public:
     Player(string name, vector<int> shipLengths);
 
     void bindTrackingFleets(Player *opponent);
-    virtual void setTrackingFleet(vector<Ship> *opponentFleet);
+    virtual void setTrackingFleet(Fleet *opponentFleet);
 
     PrimaryBoard primaryBoard;
     TrackingBoard trackingBoard;
-    vector<Ship> primaryFleet;
-    vector<Ship> *trackingFleet;
+    Fleet primaryFleet;
+    Fleet *trackingFleet;
     string name;
 
     virtual pair<int, int> getMove() = 0;
@@ -246,23 +333,16 @@ public:
     bool allShipsSunk();
 };
 
-Player::Player(string name, vector<int> shipLengths) {
-    for(int i = 0; i < shipLengths.size(); i++) {
-        Ship newShip(shipLengths.at(i));
-
-        primaryFleet.push_back(newShip);
-    }
-
+Player::Player(string name, vector<int> shipLengths) : primaryFleet(shipLengths), primaryBoard(primaryFleet) {
     this->name = name;
-
 }
 
 void Player::bindTrackingFleets(Player *opponent) {
-    opponent->setTrackingFleet(trackingFleet);
     setTrackingFleet(&opponent->primaryFleet);
+    opponent->setTrackingFleet(&primaryFleet);
 }
 
-void Player::setTrackingFleet(vector<Ship> *opponentFleet) {
+void Player::setTrackingFleet(Fleet *opponentFleet) {
     trackingFleet = opponentFleet;
 }
 
@@ -275,25 +355,12 @@ void Player::markShot(int xPos, int yPos, Board::ShotOutcome outcome) {
 }
 
 bool Player::allShipsPlaced() {
-    for(int i = 0; i < primaryFleet.size(); i++) {
-        if(!primaryFleet.at(i).isPlaced()) {
-            return false;
-        }
-    }
-
-    return true;
+    return primaryFleet.allPlaced();
 }
 
 bool Player::allShipsSunk() {
-    for(int i = 0; i < primaryFleet.size(); i++) {
-        if(!primaryFleet.at(i).isSunk()) {
-            return false;
-        }
-    }
-
-    return true;
+    return primaryFleet.allSunk();
 }
-
 
 
 class ComputerRandomPlayer : public Player {
@@ -321,14 +388,14 @@ void ComputerRandomPlayer::placeShips() {
             int randomX = rand() % 10;
             int randomY = rand() % 10;
 
-            primaryFleet.at(i).setGridPos(randomX, randomY);
+            primaryFleet.ship(i).setGridPos(randomX, randomY);
 
             if(rand() % 2) {
-                primaryFleet.at(i).rotate();
+                primaryFleet.ship(i).rotate();
             }
 
-            if(primaryBoard.shipFits(primaryFleet.at(i))) {
-                primaryBoard.placeShip(&primaryFleet.at(i));
+            if(primaryBoard.shipFits(primaryFleet.ship(i))) {
+                primaryBoard.placeShip(&primaryFleet.ship(i));
 
                 break;
             }
@@ -406,7 +473,7 @@ template <typename BoardType>
 class BoardRenderer {
 public:
     BoardRenderer();
-    BoardRenderer(RenderWindow &window, BoardType &board, vector<Ship> &fleet, double dispX, double dispY);
+    BoardRenderer(RenderWindow &window, BoardType &board, Fleet &fleet, double dispX, double dispY);
 
     void draw(bool showPlaced);
     void drawStatusSquare(double mouseX, double mouseY);
@@ -416,7 +483,7 @@ public:
 protected:
     RenderWindow *_window;
     BoardType *_board;
-    vector<Ship> *_fleet;
+    Fleet *_fleet;
     vector<ShipRenderer> shipRenderers;
     double _dispX;
     double _dispY;
@@ -426,7 +493,7 @@ template <typename BoardType>
 BoardRenderer<BoardType>::BoardRenderer() {} // Don't initialize any fields, and that's fine
 
 template <typename BoardType>
-BoardRenderer<BoardType>::BoardRenderer(RenderWindow &window, BoardType &board, vector<Ship> &fleet, double dispX, double dispY) {
+BoardRenderer<BoardType>::BoardRenderer(RenderWindow &window, BoardType &board, Fleet &fleet, double dispX, double dispY) {
     _window = &window;
     _board = &board;
     _fleet = &fleet;
@@ -434,7 +501,7 @@ BoardRenderer<BoardType>::BoardRenderer(RenderWindow &window, BoardType &board, 
     _dispY = dispY;
 
     for(int i = 0; i < fleet.size(); i++) {
-        ShipRenderer newShipRenderer(window, &fleet.at(i), dispX + 525, dispY + 25 +i * 100);
+        ShipRenderer newShipRenderer(window, &fleet.ship(i), dispX + 525, dispY + 25 +i * 100);
 
         shipRenderers.push_back(newShipRenderer);
     }
@@ -501,14 +568,14 @@ pair<int, int> BoardRenderer<BoardType>::getGridPos(double xPos, double yPos) {
 
 template <typename BoardType>
 void BoardRenderer<BoardType>::resetShipLocation() {
-    for(int i = 0; i < _board->_fleet.size(); i++) {
+    for(int i = 0; i < _fleet->size(); i++) {
         shipRenderers.at(i).setXY(_dispX + 525, _dispY + 25 + i * 100);
     }
 }
 
 class PrimaryBoardRenderer : public BoardRenderer<PrimaryBoard> {
 public:
-    PrimaryBoardRenderer(RenderWindow &window, PrimaryBoard &board, vector<Ship> &fleet, double dispX, double dispY);
+    PrimaryBoardRenderer(RenderWindow &window, PrimaryBoard &board, Fleet &fleet, double dispX, double dispY);
     using BoardRenderer<PrimaryBoard>::BoardRenderer;
 
     void updateSpacePress();
@@ -525,7 +592,7 @@ private:
     double _activeOffsetY;
 };
 
-PrimaryBoardRenderer::PrimaryBoardRenderer(RenderWindow &window, PrimaryBoard &board, vector<Ship> &fleet, double dispX, double dispY):
+PrimaryBoardRenderer::PrimaryBoardRenderer(RenderWindow &window, PrimaryBoard &board, Fleet &fleet, double dispX, double dispY):
         BoardRenderer<PrimaryBoard>(window, board, fleet, dispX, dispY) {
     _activeIndex = -1;
     _spaceCount = 0;
@@ -607,7 +674,7 @@ public:
     PrimaryBoardRenderer pBoardRenderer;
     BoardRenderer<TrackingBoard> tBoardRenderer;
 
-    void setTrackingFleet(vector<Ship> *otherFleet) override;
+    void setTrackingFleet(Fleet *otherFleet) override;
 
     pair<int, int> getMove() override;
     void placeShips() override;
@@ -617,7 +684,7 @@ HumanSFMLPlayer::HumanSFMLPlayer(string name, vector<int> shipLengths) : Player(
                                                             pBoardRenderer(window, primaryBoard, primaryFleet, 25, 50),
                                                             window(VideoMode(1625, 700), "SFML Example Window"){}
 
-void HumanSFMLPlayer::setTrackingFleet(vector<Ship> *otherFleet) {
+void HumanSFMLPlayer::setTrackingFleet(Fleet *otherFleet) {
     Player::setTrackingFleet(otherFleet);
 
     BoardRenderer<TrackingBoard> newTBoardRenderer(window, trackingBoard, *trackingFleet, 825, 50);
