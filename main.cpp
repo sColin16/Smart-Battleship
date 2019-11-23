@@ -15,9 +15,6 @@ using namespace sf;                             // using the sf namespace
 
 enum Orientation {HORIZONTAL, VERTICAL};
 
-template <typename BoardType>
-class BoardRenderer;
-
 class Ship {
 public:
     Ship(int length);
@@ -27,6 +24,7 @@ public:
     void markAsHit(int xPos, int yPos);
     bool isPlaced();
     bool isSunk();
+    void markAsSunk();
     bool contains(int xPos, int yPos);
     int getLength();
 
@@ -49,6 +47,7 @@ private:
 };
 
 Ship::Ship(int length) {
+    _sunk = false;
     _placed = false;
     _boardX = -1;
     _boardY = -1;
@@ -97,6 +96,10 @@ bool Ship::isSunk() {
     return _sunk;
 }
 
+void Ship::markAsSunk() {
+    _sunk = true;
+}
+
 bool Ship::contains(int xPos, int yPos) {
     return _squares.count(make_pair(xPos, yPos));
 }
@@ -118,28 +121,21 @@ int Ship::getLength() {
 
 class Fleet {
 public:
-    Fleet();
     Fleet(vector<int> lengths);
 
-    bool markShipHit(int xPos, int yPos); // Return if the ship was hit or not
+    int markShipHit(int xPos, int yPos); // Returns the index of the ship sunk, or -1 if non sunk
 
     int size(); // Returns the size of the fleet
     Ship &ship(int index);
-    Ship lastSunken(); // What to return if no ship has been sunk yet?
 
     bool allPlaced();
     bool allSunk();
 
 private:
     vector<Ship> _ships;
-    int _lastSunkenIndex;
 };
 
-Fleet::Fleet() {
-    _lastSunkenIndex = -1;
-}
-
-Fleet::Fleet(vector<int> lengths) : Fleet() {
+Fleet::Fleet(vector<int> lengths) {
     for(int i = 0; i < lengths.size(); i++) {
         Ship newShip(lengths.at(i));
 
@@ -147,18 +143,14 @@ Fleet::Fleet(vector<int> lengths) : Fleet() {
     }
 }
 
-bool Fleet::markShipHit(int xPos, int yPos) {
+int Fleet::markShipHit(int xPos, int yPos) {
     for(int i = 0; i < _ships.size(); i++) {
         if(_ships.at(i).contains(xPos, yPos)) {
             _ships.at(i).markAsHit(xPos, yPos);
 
             bool sunken = _ships.at(i).isSunk();
 
-            if(sunken) {
-                _lastSunkenIndex = i;
-            }
-
-            return sunken;
+            return sunken ? i : -1;
         }
     }
 }
@@ -169,10 +161,6 @@ int Fleet::size() {
 
 Ship &Fleet::ship(int index) {
     return _ships.at(index);
-}
-
-Ship Fleet::lastSunken() {
-    return _ships.at(_lastSunkenIndex);
 }
 
 bool Fleet::allPlaced() {
@@ -196,76 +184,60 @@ bool Fleet::allSunk() {
 }
 
 
-class Board {
-public:
-    Board();
-
-    static const int GRID_SIZE = 10; // In theory, this could be changed to be a parameter, although renderer class probably couldnt handle that easily
-
-    enum SquareState {BLANK, SHIP, HIT_MARKER, MISS_MARKER};
-    enum ShotOutcome {HIT, MISS, SUNK};
-
-    friend class BoardRenderer<Board>;
-
-protected:
-    vector<vector<SquareState>> _grid; // We intialize this in the constructor
-
-    bool posInGrid(int xPos, int yPos); // Checks that a shot is within the bounds of the board
+struct ShotOutcome {
+    bool hit;
+    int sunkenIndex;
 };
 
-Board::Board() {
+ShotOutcome makeOutcome(bool hit, int sunkenIndex) {
+    ShotOutcome outcome;
+    outcome.hit = hit;
+    outcome.sunkenIndex = sunkenIndex;
+
+    return outcome;
+}
+
+class Board {
+public:
+    Board(Fleet &fleet);
+
+    ShotOutcome fireShotAt(int xPos, int yPos); // Returns true is shot is a hit, false if a miss (must check validity first)
+    bool shipFits(Ship ship);
+    void placeShip(Ship &ship); // Pas by reference to store reference to the ship so the board can sink it when appropropriate
+
+    void markShot(int xPos, int yPos, ShotOutcome outcome);
+    bool validGuess(int xPos, int yPos); // Returns true if guess is valid (in grid and not already guessed) called by tracking grids, primarily
+
+    static const int GRID_SIZE = 10; // In theory, this could be changed to be a parameter, although renderer class probably couldnt handle that easily
+    enum SquareState {BLANK, SHIP, HIT_MARKER, MISS_MARKER};
+    friend class BoardRenderer;
+
+private:
+    Fleet *_fleet;
+    vector<vector<SquareState>> _grid; // We intialize this in the constructor
+
+    bool posInsideGrid(int xPos, int yPos); // Checks that a shot is within the bounds of the board
+};
+
+Board::Board(Fleet &fleet) {
     for(int i = 0; i < GRID_SIZE; i++) {
         vector<SquareState> newRow(GRID_SIZE, BLANK);
         _grid.push_back(newRow);
     }
-}
 
-bool Board::posInGrid(int xPos, int yPos){
-    return xPos >=0 && xPos < GRID_SIZE && yPos >= 0 && yPos < GRID_SIZE;
-}
-
-
-
-class PrimaryBoard : Board {
-public:
-    PrimaryBoard(Fleet &fleet);
-    using Board::Board; // Inheret the constructor of the Board class
-
-    Board::ShotOutcome fireShotAt(int xPos, int yPos); // Returns true is shot is a hit, false if a miss (must check validity first)
-    bool shipFits(Ship ship);
-    void placeShip(Ship *ship); // Pas by reference to store reference to the ship so the board can sink it when appropropriate
-    Board::ShotOutcome getOutcome(bool sunk, SquareState finalState);
-
-    Fleet *_fleet;
-
-    friend class BoardRenderer<PrimaryBoard>;
-
-};
-
-PrimaryBoard::PrimaryBoard(Fleet &fleet) : Board() {
     _fleet = &fleet;
 }
 
-Board::ShotOutcome PrimaryBoard::getOutcome(bool sunk, SquareState finalState) {
-    if(sunk) {
-        return SUNK;
-    } else if(finalState == HIT_MARKER) {
-        return HIT;
-    }
+ShotOutcome Board::fireShotAt(int xPos, int yPos) {
+    bool hit = _grid.at(xPos).at(yPos) == SHIP;
+    _grid.at(xPos).at(yPos) = hit ? HIT_MARKER : MISS_MARKER;
 
-    return MISS;
+    int sunkIndex = hit ? _fleet->markShipHit(xPos, yPos) : -1;
+
+    return makeOutcome(hit, sunkIndex);
 }
 
-
-Board::ShotOutcome PrimaryBoard::fireShotAt(int xPos, int yPos) {
-    _grid.at(xPos).at(yPos) = _grid.at(xPos).at(yPos) == SHIP ? HIT_MARKER : MISS_MARKER;
-
-    bool sunk = _fleet->markShipHit(xPos, yPos);
-
-    return getOutcome(sunk, _grid.at(xPos).at(yPos));
-}
-
-bool PrimaryBoard::shipFits(Ship ship) {
+bool Board::shipFits(Ship ship) {
     if(ship._boardX < 0 || ship._boardY < 0 ){
         return false;
     }
@@ -273,7 +245,7 @@ bool PrimaryBoard::shipFits(Ship ship) {
     for(auto &square : ship._squares) {
         pair<int, int> squarePos = square.first;
 
-        if(!posInGrid(squarePos.first, squarePos.second) || _grid.at(squarePos.first).at(squarePos.second) != BLANK) {
+        if(!posInsideGrid(squarePos.first, squarePos.second) || _grid.at(squarePos.first).at(squarePos.second) != BLANK) {
             return false;
         }
     }
@@ -281,90 +253,105 @@ bool PrimaryBoard::shipFits(Ship ship) {
     return true;
 }
 
-void PrimaryBoard::placeShip(Ship *ship) {
-    for(auto &square : ship->_squares) {
+void Board::placeShip(Ship &ship) {
+    for(auto &square : ship._squares) {
         pair<int, int> squarePos = square.first;
 
         _grid.at(squarePos.first).at(squarePos.second) = SHIP;
     }
 
-    ship->_placed = true;
+    ship._placed = true;
 }
 
-
-
-class TrackingBoard : Board {
-public:
-    using Board::Board;
-    void markShot(int xPos, int yPos, Board::ShotOutcome outcome);
-    bool validShot(int xPos, int yPos); // Returns true if guess is valid (in grid and not already guessed) called by tracking grids, primarily
-
-    friend class BoardRenderer<TrackingBoard>;
-};
-
-void TrackingBoard::markShot(int xPos, int yPos, Board::ShotOutcome outcome) {
-    if(outcome == HIT || outcome == SUNK) {
+void Board::markShot(int xPos, int yPos, ShotOutcome outcome) {
+    if(outcome.hit) {
         _grid.at(xPos).at(yPos) = HIT_MARKER;
     } else {
         _grid.at(xPos).at(yPos) = MISS_MARKER;
     }
+
+    if(outcome.sunkenIndex >= 0) {
+        _fleet->ship(outcome.sunkenIndex).markAsSunk();
+    }
 }
 
-bool TrackingBoard::validShot(int xPos, int yPos) {
-    return posInGrid(xPos, yPos) && (_grid.at(xPos).at(yPos) == BLANK || _grid.at(xPos).at(yPos) == BLANK);
+bool Board::validGuess(int xPos, int yPos) {
+    return posInsideGrid(xPos, yPos) && (_grid.at(xPos).at(yPos) == BLANK || _grid.at(xPos).at(yPos) == BLANK);
 }
 
+bool Board::posInsideGrid(int xPos, int yPos){
+    return xPos >=0 && xPos < GRID_SIZE && yPos >= 0 && yPos < GRID_SIZE;
+}
 
 class Player {
 public:
     Player(string name, vector<int> shipLengths);
 
-    void bindTrackingFleets(Player *opponent);
-    virtual void setTrackingFleet(Fleet *opponentFleet);
-
-    PrimaryBoard primaryBoard;
-    TrackingBoard trackingBoard;
-    Fleet primaryFleet;
-    Fleet *trackingFleet;
-    string name;
-
     virtual pair<int, int> getMove() = 0;
     virtual void placeShips() = 0;
+    void placeShipsRandomly();
 
-    Board::ShotOutcome fireShotAt(int xPos, int yPos);
-    void markShot(int xPos, int yPos, Board::ShotOutcome outcome);
+    ShotOutcome fireShotAt(int xPos, int yPos);
+    void markShot(int xPos, int yPos, ShotOutcome outcome);
+
+    string getName();
 
     bool allShipsPlaced();
     bool allShipsSunk();
+
+protected:
+    Board _primaryBoard;
+    Board _trackingBoard;
+
+    Fleet _primaryFleet;
+    Fleet _trackingFleet;
+    string _name;
 };
 
-Player::Player(string name, vector<int> shipLengths) : primaryFleet(shipLengths), primaryBoard(primaryFleet) {
-    this->name = name;
+Player::Player(string name, vector<int> shipLengths) : _primaryFleet(shipLengths), _trackingFleet(shipLengths),
+        _primaryBoard(_primaryFleet), _trackingBoard(_trackingFleet) {
+    _name = name;
 }
 
-void Player::bindTrackingFleets(Player *opponent) {
-    setTrackingFleet(&opponent->primaryFleet);
-    opponent->setTrackingFleet(&primaryFleet);
+void Player::placeShipsRandomly() {
+    for(int i = 0; i < _primaryFleet.size(); i++) {
+        while(true) {
+            int randomX = rand() % 10;
+            int randomY = rand() % 10;
+
+            _primaryFleet.ship(i).setGridPos(randomX, randomY);
+
+            if(rand() % 2) {
+                _primaryFleet.ship(i).rotate();
+            }
+
+            if(_primaryBoard.shipFits(_primaryFleet.ship(i))) {
+                _primaryBoard.placeShip(_primaryFleet.ship(i));
+
+                break;
+            }
+        }
+    }
 }
 
-void Player::setTrackingFleet(Fleet *opponentFleet) {
-    trackingFleet = opponentFleet;
+ShotOutcome Player::fireShotAt(int xPos, int yPos) {
+    return _primaryBoard.fireShotAt(xPos, yPos);
 }
 
-Board::ShotOutcome Player::fireShotAt(int xPos, int yPos) {
-    return primaryBoard.fireShotAt(xPos, yPos);
+void Player::markShot(int xPos, int yPos, ShotOutcome outcome) {
+    _trackingBoard.markShot(xPos, yPos, outcome);
 }
 
-void Player::markShot(int xPos, int yPos, Board::ShotOutcome outcome) {
-    trackingBoard.markShot(xPos, yPos, outcome);
+string Player::getName() {
+    return _name;
 }
 
 bool Player::allShipsPlaced() {
-    return primaryFleet.allPlaced();
+    return _primaryFleet.allPlaced();
 }
 
 bool Player::allShipsSunk() {
-    return primaryFleet.allSunk();
+    return _primaryFleet.allSunk();
 }
 
 
@@ -381,31 +368,14 @@ pair<int, int> ComputerRandomPlayer::getMove() {
         int randomRow = rand() % 10;
         int randomCol = rand() % 10;
 
-        if(trackingBoard.validShot(randomRow, randomCol)) {
+        if(_trackingBoard.validGuess(randomRow, randomCol)) {
             return make_pair(randomRow, randomCol);
         }
     }
 }
 
 void ComputerRandomPlayer::placeShips() {
-    for(int i = 0; i < primaryFleet.size(); i++) {
-        while(true) {
-            int randomX = rand() % 10;
-            int randomY = rand() % 10;
-
-            primaryFleet.ship(i).setGridPos(randomX, randomY);
-
-            if(rand() % 2) {
-                primaryFleet.ship(i).rotate();
-            }
-
-            if(primaryBoard.shipFits(primaryFleet.ship(i))) {
-                primaryBoard.placeShip(&primaryFleet.ship(i));
-
-                break;
-            }
-        }
-    }
+    placeShipsRandomly();
 }
 
 // Responsible for rendering a single ship
@@ -489,11 +459,33 @@ bool ShipRenderer::contains(Vector2i mousePos) {
     return x >= _dispX && x <= _dispX + width && y >= _dispY && y <= _dispY + height;
 }
 
-template <typename BoardType>
+
+// Responsible for rendering the grid and the fleet (depending on the context of if your being placed or playing)
+class BoardRenderer {
+public:
+    BoardRenderer(RenderWindow &window, Board &board, Fleet &fleet, double dispX, double dispY);
+
+    void draw();
+    void drawStatusSquare(double mouseX, double mouseY);
+    pair<int, int> getGridPos(double xPos, double yPos);
+
+    double getDispX();
+    double getDispY();
+
+    Board &getBoard();
+
+protected:
+    RenderWindow *_window;
+    Board *_board;
+
+    double _dispX;
+    double _dispY;
+};
+
+
 class FleetRenderer {
 public:
-    FleetRenderer();
-    FleetRenderer(Fleet &fleet, BoardRenderer<BoardType> *boardRenderer, RenderWindow &window);
+    FleetRenderer(Fleet &fleet, BoardRenderer *boardRenderer, RenderWindow &window);
     void draw(bool placingShips);
     void resetLocations();
 
@@ -506,7 +498,7 @@ public:
     void rotateShip();
 
 private:
-    BoardRenderer<BoardType> *_boardRenderer;
+    BoardRenderer *_boardRenderer;
     vector<ShipRenderer> _shipRenderers;
     RenderWindow *_window;
     int _spaceCount;
@@ -517,11 +509,7 @@ private:
     // TODO: maybe also store the active ship to clean up the code a bit?
 };
 
-template <typename BoardType>
-FleetRenderer<BoardType>::FleetRenderer() {}
-
-template <typename BoardType>
-FleetRenderer<BoardType>::FleetRenderer(Fleet &fleet, BoardRenderer<BoardType> *boardRenderer, RenderWindow &window) {
+FleetRenderer::FleetRenderer(Fleet &fleet, BoardRenderer *boardRenderer, RenderWindow &window) {
     _boardRenderer = boardRenderer;
     _activeIndex = -1;
     _spaceCount = 0;
@@ -535,22 +523,19 @@ FleetRenderer<BoardType>::FleetRenderer(Fleet &fleet, BoardRenderer<BoardType> *
     }
 }
 
-template <typename BoardType>
-void FleetRenderer<BoardType>::draw(bool placingShips) {
+void FleetRenderer::draw(bool placingShips) {
     for(int i = 0; i < _shipRenderers.size(); i++) {
         _shipRenderers.at(i).draw(placingShips);
     }
 }
 
-template <typename BoardType>
-void FleetRenderer<BoardType>::resetLocations() {
+void FleetRenderer::resetLocations() {
     for(int i = 0; i < _shipRenderers.size(); i++) {
         _shipRenderers.at(i).setXY(_boardRenderer->getDispX()+ 525, _boardRenderer->getDispX() + 25 + i * 100);
     }
 }
 
-template <typename BoardType>
-void FleetRenderer<BoardType>::updateSpacePress() {
+void FleetRenderer::updateSpacePress() {
     if(Keyboard::isKeyPressed(sf::Keyboard::Space)) {
         _spaceCount += 1;
     } else {
@@ -558,8 +543,7 @@ void FleetRenderer<BoardType>::updateSpacePress() {
     }
 }
 
-template <typename BoardType>
-void FleetRenderer<BoardType>::updateShipPos(Vector2i mousePos) {
+void FleetRenderer::updateShipPos(Vector2i mousePos) {
     if(_activeIndex != -1) {
         double xPos = mousePos.x + _activeOffsetX ;
         double yPos = mousePos.y + _activeOffsetY;
@@ -580,8 +564,7 @@ void FleetRenderer<BoardType>::updateShipPos(Vector2i mousePos) {
     }
 }
 
-template <typename BoardType>
-void FleetRenderer<BoardType>::selectShip(Vector2i mousePos) {
+void FleetRenderer::selectShip(Vector2i mousePos) {
     for(int i = 0; i < _shipRenderers.size(); i++) {
         if(_shipRenderers.at(i).contains(mousePos) && !_shipRenderers.at(i).getShip().isPlaced()) {
             _activeIndex = i;
@@ -594,10 +577,9 @@ void FleetRenderer<BoardType>::selectShip(Vector2i mousePos) {
     }
 }
 
-template <typename BoardType>
-void FleetRenderer<BoardType>::lockShip(Vector2i mousePos) {
+void FleetRenderer::lockShip(Vector2i mousePos) {
     if(_boardRenderer->getBoard().shipFits((_shipRenderers.at(_activeIndex).getShip()))) { // TODO: this code sucks. Make it good
-        _boardRenderer->getBoard().placeShip(&_shipRenderers.at(_activeIndex).getShip());
+        _boardRenderer->getBoard().placeShip(_shipRenderers.at(_activeIndex).getShip());
 
         _activeIndex = -1;
 
@@ -605,8 +587,7 @@ void FleetRenderer<BoardType>::lockShip(Vector2i mousePos) {
     }
 }
 
-template <typename BoardType>
-void FleetRenderer<BoardType>::handleClick(Vector2i mousePos) {
+void FleetRenderer::handleClick(Vector2i mousePos) {
     if(_activeIndex == -1) {
         selectShip(mousePos);
     } else {
@@ -614,53 +595,22 @@ void FleetRenderer<BoardType>::handleClick(Vector2i mousePos) {
     }
 }
 
-template <typename BoardType>
-bool FleetRenderer<BoardType>::spacePressed() {
+bool FleetRenderer::spacePressed() {
     return _spaceCount == 1;
 }
 
-template <typename BoardType>
-void FleetRenderer<BoardType>::rotateShip() {
+void FleetRenderer::rotateShip() {
     _shipRenderers.at(_activeIndex).getShip().rotate();
 }
 
-// Responsible for rendering the grid and the fleet (depending on the context of if your being placed or playing)
-template <typename BoardType>
-class BoardRenderer {
-public:
-    BoardRenderer();
-    BoardRenderer(RenderWindow &window, BoardType &board, Fleet &fleet, double dispX, double dispY);
-
-    void draw();
-    void drawStatusSquare(double mouseX, double mouseY);
-    pair<int, int> getGridPos(double xPos, double yPos);
-
-    double getDispX();
-    double getDispY();
-
-    BoardType &getBoard();
-
-protected:
-    RenderWindow *_window;
-    BoardType *_board;
-
-    double _dispX;
-    double _dispY;
-};
-
-template <typename BoardType>
-BoardRenderer<BoardType>::BoardRenderer() {} // Don't initialize any fields, and that's fine
-
-template <typename BoardType>
-BoardRenderer<BoardType>::BoardRenderer(RenderWindow &window, BoardType &board, Fleet &fleet, double dispX, double dispY) {
+BoardRenderer::BoardRenderer(RenderWindow &window, Board &board, Fleet &fleet, double dispX, double dispY) {
     _window = &window;
     _board = &board;
     _dispX = dispX;
     _dispY = dispY;
 }
 
-template <typename BoardType>
-void BoardRenderer<BoardType>::draw() {
+void BoardRenderer::draw() {
     for(int i = 0; i < Board::GRID_SIZE; i++) {
         for(int j = 0; j < 10; j++) {
             Board::SquareState value = _board->_grid.at(i).at(j);
@@ -690,8 +640,7 @@ void BoardRenderer<BoardType>::draw() {
     }
 }
 
-template <typename BoardType>
-void BoardRenderer<BoardType>::drawStatusSquare(double mouseX, double mouseY) {
+void BoardRenderer::drawStatusSquare(double mouseX, double mouseY) {
     pair<int, int> gridPos = getGridPos(mouseX, mouseY);
 
     int xPos = gridPos.first;
@@ -706,108 +655,85 @@ void BoardRenderer<BoardType>::drawStatusSquare(double mouseX, double mouseY) {
     }
 }
 
-template <typename BoardType>
-pair<int, int> BoardRenderer<BoardType>::getGridPos(double xPos, double yPos) {
+pair<int, int> BoardRenderer::getGridPos(double xPos, double yPos) {
     int rowPos = (xPos - _dispX) / 50;
     int columnPos = (yPos - _dispY) / 50;
 
     return make_pair(rowPos, columnPos);
 }
 
-template<typename BoardType>
-BoardType &BoardRenderer<BoardType>::getBoard() {
+Board &BoardRenderer::getBoard() {
     return *_board;
 }
 
-template<typename BoardType>
-double BoardRenderer<BoardType>::getDispX() {
+double BoardRenderer::getDispX() {
     return _dispX;
 }
 
-template<typename BoardType>
-double BoardRenderer<BoardType>::getDispY() {
+double BoardRenderer::getDispY() {
     return _dispY;
 }
 
-
-class PrimaryBoardRenderer : public BoardRenderer<PrimaryBoard> {
-public:
-    PrimaryBoardRenderer(RenderWindow &window, PrimaryBoard &board, Fleet &fleet, double dispX, double dispY);
-    using BoardRenderer<PrimaryBoard>::BoardRenderer;
-
-private:
-
-};
-
-PrimaryBoardRenderer::PrimaryBoardRenderer(RenderWindow &window, PrimaryBoard &board, Fleet &fleet, double dispX, double dispY):
-        BoardRenderer<PrimaryBoard>(window, board, fleet, dispX, dispY) {}
 
 
 class HumanSFMLPlayer : public Player {
 public:
     HumanSFMLPlayer(string name, vector<int> shipLengths);
 
-    RenderWindow window;
-    PrimaryBoardRenderer pBoardRenderer;
-    BoardRenderer<TrackingBoard> tBoardRenderer;
-    FleetRenderer<PrimaryBoard> pFleetRenderer;
-    FleetRenderer<TrackingBoard> tFleetRenderer;
-
-    void setTrackingFleet(Fleet *otherFleet) override;
-
     pair<int, int> getMove() override;
     void placeShips() override;
+
+private:
+    RenderWindow _window;
+
+    BoardRenderer _pBoardRenderer;
+    BoardRenderer _tBoardRenderer;
+
+    FleetRenderer _pFleetRenderer;
+    FleetRenderer _tFleetRenderer;
 };
 
 HumanSFMLPlayer::HumanSFMLPlayer(string name, vector<int> shipLengths) : Player(name, shipLengths),
-        window(VideoMode(1625, 700), "SFML Example Window"),
-        pBoardRenderer(window, primaryBoard, primaryFleet, 25, 50),
-        pFleetRenderer(primaryFleet, &pBoardRenderer, window){}
-
-void HumanSFMLPlayer::setTrackingFleet(Fleet *otherFleet) {
-    Player::setTrackingFleet(otherFleet);
-
-    BoardRenderer<TrackingBoard> newTBoardRenderer(window, trackingBoard, *trackingFleet, 825, 50);
-    tBoardRenderer = newTBoardRenderer;
-
-    FleetRenderer<TrackingBoard> newTFleetRenderer(*trackingFleet, &tBoardRenderer, window);
-    tFleetRenderer = newTFleetRenderer;
-}
+        _window(VideoMode(1625, 700), "SFML Example Window"),
+        _pBoardRenderer(_window, _primaryBoard, _primaryFleet, 25, 50),
+        _tBoardRenderer(_window, _trackingBoard, _trackingFleet, 825, 50),
+        _tFleetRenderer(_trackingFleet, &_tBoardRenderer, _window),
+        _pFleetRenderer(_primaryFleet, &_pBoardRenderer, _window){}
 
 void HumanSFMLPlayer::placeShips() {
-    while( window.isOpen() ) {
-        window.clear( Color::Black );
+    while(_window.isOpen()) {
+        _window.clear( Color::Black );
 
-        pBoardRenderer.draw();
-        tBoardRenderer.draw();
+        _pBoardRenderer.draw();
+        _tBoardRenderer.draw();
 
-        pFleetRenderer.draw(true);
-        tFleetRenderer.draw(true);
+        _pFleetRenderer.draw(true);
+        _tFleetRenderer.draw(true);
 
-        Vector2i mousePos = sf::Mouse::getPosition(window);
-        pFleetRenderer.updateSpacePress();
+        Vector2i mousePos = sf::Mouse::getPosition(_window);
+        _pFleetRenderer.updateSpacePress();
 
-        pFleetRenderer.updateShipPos(mousePos);
+        _pFleetRenderer.updateShipPos(mousePos);
 
         if(Mouse::isButtonPressed(sf::Mouse::Left)) {
-            pFleetRenderer.handleClick(mousePos);
+            _pFleetRenderer.handleClick(mousePos);
         }
 
-        if(pFleetRenderer.spacePressed()) {
-            pFleetRenderer.rotateShip();
+        if(_pFleetRenderer.spacePressed()) {
+            _pFleetRenderer.rotateShip();
         }
 
         if(allShipsPlaced()) {
-            pFleetRenderer.resetLocations(); // Reset the ships that were placed before to their original coordinates
+            _pFleetRenderer.resetLocations(); // Reset the ships that were placed before to their original coordinates
             return;
         }
 
-        window.display();
+        _window.display();
 
         Event event;
-        while( window.pollEvent(event) ) {
+        while(_window.pollEvent(event)) {
             if( event.type == Event::Closed ) {
-                window.close();
+                _window.close();
             }
         }
 
@@ -815,33 +741,33 @@ void HumanSFMLPlayer::placeShips() {
 }
 
 pair<int, int> HumanSFMLPlayer::getMove() {
-    while( window.isOpen() ) {
-        window.clear( Color::Black );
+    while(_window.isOpen()) {
+        _window.clear( Color::Black );
 
-        pBoardRenderer.draw();
-        tBoardRenderer.draw();
+        _pBoardRenderer.draw();
+        _tBoardRenderer.draw();
 
-        pFleetRenderer.draw(false);
-        tFleetRenderer.draw(false);
+        _pFleetRenderer.draw(false);
+        _tFleetRenderer.draw(false);
 
-        Vector2i mousePos = sf::Mouse::getPosition(window);
+        Vector2i mousePos = sf::Mouse::getPosition(_window);
 
-        tBoardRenderer.drawStatusSquare(mousePos.x, mousePos.y);
+        _tBoardRenderer.drawStatusSquare(mousePos.x, mousePos.y);
 
         if(Mouse::isButtonPressed(sf::Mouse::Left)) {
-            pair<int, int> move = tBoardRenderer.getGridPos(mousePos.x, mousePos.y);
+            pair<int, int> move = _tBoardRenderer.getGridPos(mousePos.x, mousePos.y);
 
-            if(trackingBoard.validShot(move.first, move.second)) {
+            if(_trackingBoard.validGuess(move.first, move.second)) {
                 return move;
             }
         }
 
-        window.display();
+        _window.display();
 
         Event event;
-        while( window.pollEvent(event) ) {
+        while(_window.pollEvent(event)) {
             if( event.type == Event::Closed ) {
-                window.close();
+                _window.close();
                 return make_pair(-1, -1);
             }
         }
@@ -860,13 +786,13 @@ public:
 
     char convertYPos(int yPos);
     int convertXPos(int xPos);
-    string getOutcomeString(Board::ShotOutcome outcome);
+    string getOutcomeString(ShotOutcome outcome);
 
     void writeSeparator();
     void writeName(string name);
-    void writeMove(int xPos, int yPos, Board::ShotOutcome outcome);
+    void writeMove(int xPos, int yPos, ShotOutcome outcome);
 
-    void recordMove(string name, int xPos, int yPos, Board::ShotOutcome outcome);
+    void recordMove(string name, int xPos, int yPos, ShotOutcome outcome);
     void recordWinner(string name);
 };
 
@@ -901,14 +827,12 @@ int Battlelog::convertXPos(int xPos) {
     return xPos + 1;
 }
 
-string Battlelog::getOutcomeString(Board::ShotOutcome outcome) {
-    if(outcome == Board::SUNK) {
+string Battlelog::getOutcomeString(ShotOutcome outcome) {
+    if(outcome.sunkenIndex >=0 ) {
         return "SUNK";
-    } else if(outcome == Board::HIT) {
-        return "HIT";
-    } else {
-        return "MISS";
     }
+
+    return outcome.hit ? "HIT" : "MISS";
 }
 
 void Battlelog::writeSeparator() {
@@ -919,12 +843,12 @@ void Battlelog::writeName(string name) {
     battlelogFile << "| " << setw(10) << setfill(' ') << left << name << " ";
 }
 
-void Battlelog::writeMove(int xPos, int yPos, Board::ShotOutcome outcome) {
+void Battlelog::writeMove(int xPos, int yPos, ShotOutcome outcome) {
     battlelogFile << " " << setw(5) << setfill(' ') << left << (convertYPos(yPos) + to_string(convertXPos(xPos)));
     battlelogFile << " " << setw(4) << setfill(' ') << right << getOutcomeString(outcome) << " |";
 }
 
-void Battlelog::recordMove(string name, int xPos, int yPos, Board::ShotOutcome outcome) {
+void Battlelog::recordMove(string name, int xPos, int yPos, ShotOutcome outcome) {
     if(firstPlayer) {
         battlelogFile << "|";
     }
@@ -971,7 +895,6 @@ template<typename p1Type, typename p2Type>
 Game<p1Type, p2Type>::Game(string p1Name, string p2Name, vector<int> shipLengths, string battlelogName) : playerOne(p1Name, shipLengths),
         playerTwo(p2Name, shipLengths), battlelog(battlelogName, p1Name, p2Name) {
     turn = 1;
-    playerOne.bindTrackingFleets(&playerTwo);
 }
 
 template<typename p1Type, typename p2Type>
@@ -979,14 +902,14 @@ void Game<p1Type, p2Type>::runGame() {
     playerOne.placeShips();
 
     if(!playerOne.allShipsPlaced()) {
-        cerr << playerOne.name <<  " failed to place all their ships" << endl;
+        cerr << playerOne.getName() <<  " failed to place all their ships" << endl;
         return;
     }
 
     playerTwo.placeShips();
 
     if(!playerTwo.allShipsPlaced()) {
-        cerr << playerTwo.name << " failed to place all their ships" << endl;
+        cerr << playerTwo.getName() << " failed to place all their ships" << endl;
         return;
     }
 
@@ -995,17 +918,17 @@ void Game<p1Type, p2Type>::runGame() {
             pair<int, int> move = playerOne.getMove();
 
             if(move.first < 0) {
-                cerr << playerOne.name << " has forfeited the match" << endl;
+                cerr << playerOne.getName() << " has forfeited the match" << endl;
                 return;
             }
 
-            Board::ShotOutcome outcome = playerTwo.fireShotAt(move.first, move.second);
+            ShotOutcome outcome = playerTwo.fireShotAt(move.first, move.second);
             playerOne.markShot(move.first, move.second, outcome);
-            battlelog.recordMove(playerOne.name, move.first, move.second, outcome);
+            battlelog.recordMove(playerOne.getName(), move.first, move.second, outcome);
 
             if(playerTwo.allShipsSunk()) {
-                battlelog.recordWinner(playerOne.name);
-                cerr << playerOne.name << " wins" << endl;
+                battlelog.recordWinner(playerOne.getName());
+                cerr << playerOne.getName() << " wins" << endl;
                 return;
             }
 
@@ -1014,17 +937,17 @@ void Game<p1Type, p2Type>::runGame() {
             pair<int, int> move = playerTwo.getMove();
 
             if(move.first < 0) {
-                cerr << playerTwo.name << " has forfeited the match" << endl;
+                cerr << playerTwo.getName() << " has forfeited the match" << endl;
                 return;
             }
 
-            Board::ShotOutcome outcome = playerOne.fireShotAt(move.first, move.second);
+            ShotOutcome outcome = playerOne.fireShotAt(move.first, move.second);
             playerTwo.markShot(move.first, move.second, outcome);
-            battlelog.recordMove(playerTwo.name, move.first, move.second, outcome);
+            battlelog.recordMove(playerTwo.getName(), move.first, move.second, outcome);
 
             if(playerOne.allShipsSunk()) {
-                battlelog.recordWinner(playerTwo.name);
-                cerr << playerTwo.name << " wins" << endl;
+                battlelog.recordWinner(playerTwo.getName());
+                cerr << playerTwo.getName() << " wins" << endl;
                 return;
             }
 
