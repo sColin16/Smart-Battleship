@@ -8,18 +8,47 @@ using namespace std;                            // using the standard namespace
 #include <SFML/Graphics.hpp>                    // include the SFML Graphics Library
 using namespace sf;                             // using the sf namespace
 
+#include <cstdlib>
+#include <ctime>
 #include <fstream>
 #include <iomanip>
 #include <string>
 #include <utility>
 
 enum Orientation {HORIZONTAL, VERTICAL};
+// Make A vector of squares instead of map, and yeah, that should be good
+//struct Coordinate {
+//    int x;
+//    int y;
+//};
+//
+//Coordinate makeCoordinate(int x, int y) {
+//    Coordinate coordinate;
+//    coordinate.x = x;
+//    coordinate.y = y;
+//
+//    return coordinate;
+//}
+//
+//struct Square {
+//    Coordinate location;
+//    bool hit;
+//};
+//
+//Square makeSquare(Coordinate location, bool hit) {
+//    Square square;
+//    square.location = location;
+//    square.hit = hit;
+//
+//    return square;
+//}
 
 class Ship {
 public:
     Ship(int length);
 
     void rotate();
+    void setHorizontal();
     void setGridPos(int xPos, int yPos);
     void markAsHit(int xPos, int yPos);
     bool isPlaced();
@@ -27,12 +56,14 @@ public:
     void markAsSunk();
     bool contains(int xPos, int yPos);
     int getLength();
+    map<pair<int, int>, bool> getSquares();
 
     friend class Board;
-    friend class PrimaryBoard;
-    friend class TrackingBoard;
 
     friend class ShipRenderer;
+
+    //TOOD: remove this after done testing
+    friend class IntelligentComputer;
 
 private:
     void checkIfSunk();
@@ -58,6 +89,10 @@ Ship::Ship(int length) {
 
 void Ship::rotate() {
     _orientation = _orientation == HORIZONTAL ? VERTICAL : HORIZONTAL;
+}
+
+void Ship::setHorizontal() {
+    _orientation = HORIZONTAL;
 }
 
 void Ship::setGridPos(int xPos, int yPos) {
@@ -117,6 +152,10 @@ void Ship::checkIfSunk() {
 
 int Ship::getLength() {
     return _length;
+}
+
+map<pair<int, int>, bool> Ship::getSquares() {
+    return _squares;
 }
 
 class Fleet {
@@ -244,8 +283,10 @@ bool Board::shipFits(Ship ship) {
 
     for(auto &square : ship._squares) {
         pair<int, int> squarePos = square.first;
+        int xPos = squarePos.first;
+        int yPos = squarePos.second;
 
-        if(!posInsideGrid(squarePos.first, squarePos.second) || _grid.at(squarePos.first).at(squarePos.second) != BLANK) {
+        if(!posInsideGrid(xPos, yPos) || _grid.at(xPos).at(yPos) == SHIP || _grid.at(xPos).at(yPos) == MISS_MARKER) {
             return false;
         }
     }
@@ -378,6 +419,125 @@ void ComputerRandomPlayer::placeShips() {
     placeShipsRandomly();
 }
 
+class IntelligentComputer : public Player {
+public:
+    using Player::Player;
+
+    enum Mode {SEARCH, DESTROY};
+
+    //vector<pair<int, int>> hitStack;
+    //pair<int, int> lastHit;
+    Mode mode = SEARCH;
+
+    vector<vector<int>> newProbabilityGrid();
+
+    void addToDensity(Ship ship, vector<vector<int>> &probabilityGrid);
+    vector<vector<int>> findSearchProbability();
+    pair<int, int> chooseFromProbability(vector<vector<int>> probabilityGrid);
+
+    pair<int, int> getMove() override;
+    void placeShips() override;
+};
+
+vector<vector<int>> IntelligentComputer::newProbabilityGrid() {
+    vector<vector<int>> output;
+
+    for(int i = 0; i < 10; i++) {
+        vector<int> newRow(10, 0);
+        output.push_back(newRow);
+    }
+
+    return output;
+}
+
+void IntelligentComputer::addToDensity(Ship ship, vector<vector<int>> &probabilityGrid) {
+    for(auto &square : ship.getSquares()) {
+        pair<int, int> squarePos = square.first;
+
+        probabilityGrid.at(squarePos.first).at(squarePos.second) += 1;
+    }
+}
+
+vector<vector<int>> IntelligentComputer::findSearchProbability() {
+    vector<vector<int>> probabilityGrid = newProbabilityGrid();
+
+    for(int i = 0; i < _trackingFleet.size(); i++) {
+        Ship currentShip = _trackingFleet.ship(i);
+
+        if(currentShip.isSunk()) {
+            continue;
+        }
+
+        for(int j = 0; j < 10; j++) {
+            for(int k = 0; k < 10; k++) {
+                currentShip.setHorizontal();
+                currentShip.setGridPos(j, k);
+                if(_trackingBoard.shipFits(currentShip)) {
+                    addToDensity(currentShip, probabilityGrid);
+                }
+
+                currentShip.rotate();
+                currentShip.setGridPos(j, k);
+                if(_trackingBoard.shipFits(currentShip)) {
+                    addToDensity(currentShip, probabilityGrid);
+                }
+            }
+        }
+    }
+
+    return probabilityGrid;
+}
+
+pair<int, int> IntelligentComputer::chooseFromProbability(vector<vector<int>> probabilityGrid) {
+    int maxVal = probabilityGrid.at(0).at(0);
+    vector<pair<int, int>> maxCoords;
+
+    for(int i = 0; i < probabilityGrid.size(); i++) {
+        for(int j = 0; j < probabilityGrid.at(i).size(); j++) {
+            if(probabilityGrid.at(i).at(j) > maxVal && _trackingBoard.validGuess(i, j)) {
+                maxVal = probabilityGrid.at(i).at(j);
+
+                maxCoords.clear();
+                maxCoords.push_back(make_pair(i, j));
+
+            } else if(probabilityGrid.at(i).at(j) == maxVal && _trackingBoard.validGuess(i, j)) {
+                maxCoords.push_back(make_pair(i, j));
+            }
+        }
+    }
+
+    int randIndex = rand() % maxCoords.size();
+
+//    for(int i = 0; i < maxCoords.size(); i++) {
+//        cout << maxCoords.at(i).first << ", " << maxCoords.at(i).second << endl;
+//    }
+
+    return maxCoords.at(randIndex);
+}
+
+pair<int, int> IntelligentComputer::getMove() {
+    vector<vector<int>> probabilityGrid;
+
+    if(mode == SEARCH) {
+        probabilityGrid = findSearchProbability();
+        for(int i = 0; i < 10; i++) {
+            for(int j = 0; j < 10; j++) {
+                cout << probabilityGrid.at(i).at(j) << " ";
+            }
+            cout << endl;
+        }
+        cout << endl;
+    } else {
+        cout << "Hey there" << endl;
+    }
+
+    return chooseFromProbability(probabilityGrid);
+}
+
+void IntelligentComputer::placeShips() {
+    placeShipsRandomly();
+}
+
 // Responsible for rendering a single ship
 class ShipRenderer {
 public:
@@ -391,8 +551,6 @@ public:
     double getDispY();
 
     bool contains(Vector2i mousePos);
-
-    friend class PrimaryBoardRenderer;
 
 private:
     RenderWindow *_window;
@@ -957,9 +1115,11 @@ void Game<p1Type, p2Type>::runGame() {
 }
 
 int main() {
+    srand(time(0));
+
     vector<int> shipLengths = {1, 1, 1, 1, 1, 1};
 
-    Game<HumanSFMLPlayer, ComputerRandomPlayer> game("Human", "Computer");
+    Game<HumanSFMLPlayer, IntelligentComputer> game("Human", "Computer");
 
     game.runGame();
 }
