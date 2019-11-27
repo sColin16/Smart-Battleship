@@ -362,11 +362,11 @@ void Player::placeShipsRandomly() {
             int randomX = rand() % 10;
             int randomY = rand() % 10;
 
-            _primaryFleet.ship(i).setGridPos(randomX, randomY);
-
             if(rand() % 2) {
                 _primaryFleet.ship(i).rotate();
             }
+
+            _primaryFleet.ship(i).setGridPos(randomX, randomY);
 
             if(_primaryBoard.shipFits(_primaryFleet.ship(i))) {
                 _primaryBoard.placeShip(_primaryFleet.ship(i));
@@ -425,11 +425,8 @@ class IntelligentComputer : public Player {
 public:
     using Player::Player;
 
-    enum Mode {SEARCH, DESTROY};
-
     vector<pair<int, int>> hitList;
     pair<int, int> lastHit;
-    Mode mode = SEARCH;
 
     void markShot(int xPos, int yPos, ShotOutcome outcome) override;
     void markAsSunk(int xPos, int yPos, int getLength);
@@ -450,12 +447,6 @@ void IntelligentComputer::markShot(int xPos, int yPos, ShotOutcome outcome) {
 
     if(outcome.hit) {
         hitList.push_back(make_pair(xPos, yPos));
-
-        cout << "New hit list:" << endl;
-
-        for(int i = 0; i < hitList.size(); i++) {
-            cout << hitList.at(i).first << ", " << hitList.at(i).second << endl;
-        }
     }
 
     if(outcome.sunkenIndex >= 0) {
@@ -466,62 +457,92 @@ void IntelligentComputer::markShot(int xPos, int yPos, ShotOutcome outcome) {
 }
 
 void IntelligentComputer::markAsSunk(int xPos, int yPos, int length) {
-    pair<int, int> direction = make_pair(lastHit.first - xPos, lastHit.second - yPos);
+    pair<int, int> direction;
 
-    if(direction.first != 0) {
-        direction.first = 1;
+    if(lastHit.first - xPos == 0) {
+        direction = make_pair(0, 1);
+    } else {
+        direction = make_pair(1, 0);
     }
 
-    if(direction.second != 0) {
-        direction.second = 1;
-    }
+    pair<int, int> start = make_pair(-1, -1);
+    int consecutiveHits = 0;
 
-    cout << "Marking sunken ship:" << endl;
-    cout << direction.first << ", " << direction.second << endl;
-
-    if(direction.first != 0 && direction.second != 0) {
-        cerr << "Oh no, the computer is guessing wierd directions" << endl;
-    }
-
-    for(int i = 0; i < length; i++) {
+    for(int i = -length + 1; i < length; i++) {
         int xMark = xPos + direction.first * i;
         int yMark = yPos + direction.second * i;
 
         if(_trackingBoard.posInsideGrid(xMark, yMark) && _trackingBoard._grid.at(xMark).at(yMark) == Board::HIT_MARKER) {
-            cout << "Removing " << xMark << ", " << yMark << endl;
+            consecutiveHits++;
+
+            if(start.first < 0) {
+                start = make_pair(xMark, yMark);
+            }
+        }
+    }
+
+    if(consecutiveHits >= length) {
+        if(consecutiveHits > length) {
+            int diff = consecutiveHits - length;
+            //cerr << "Ambiguous Case!! " << diff * 2 << " of " << length <<  "Unknown State squares" << endl;
+            length -= diff;
+
+            start.first += direction.first * diff;
+            start.second += direction.second * diff;
+        }
+
+        for(int i = 0; i < length; i++) {
+            int xMark = start.first + direction.first * i;
+            int yMark = start.second + direction.second * i;
 
             _trackingBoard._grid.at(xMark).at(yMark) = Board::SHIP;
 
             for (int j = 0; j < hitList.size(); j++) {
                 if (hitList.at(j).first == xMark && hitList.at(j).second == yMark) {
-                    cout << "Going to do this" << endl;
                     hitList.erase(hitList.begin() + j);
-                    cout << "But guessing that this doesn't run" << endl;
-                    cout << "Succesfully removed the square" << endl;
                     break;
                 }
             }
         }
-    }
+    } else {
+        if(direction.first == 0) {
+            direction = make_pair(1, 0);
+        } else {
+            direction = make_pair(0, 1);
+        }
 
-    for(int i = 0; i < length; i++) {
-        int xMark = xPos - direction.first * i;
-        int yMark = yPos - direction.second * i;
+        start = make_pair(-1, -1);
+        consecutiveHits = 0;
 
-        if(_trackingBoard.posInsideGrid(xMark, yMark) && _trackingBoard._grid.at(xMark).at(yMark) == Board::HIT_MARKER) {
-            cout << "Removing " << xMark << ", " << yMark << endl;
+        for(int i = -length + 1; i < length; i++) {
+            int xMark = xPos + direction.first * i;
+            int yMark = yPos + direction.second * i;
 
-            _trackingBoard._grid.at(xMark).at(yMark) = Board::SHIP;
+            if(_trackingBoard.posInsideGrid(xMark, yMark) && _trackingBoard._grid.at(xMark).at(yMark) == Board::HIT_MARKER) {
+                consecutiveHits++;
 
-            for(int j = 0; j < hitList.size(); j++) {
-                if(hitList.at(j).first == xMark && hitList.at(j).second == yMark) {
-                    cout << "Going to do this" << endl;
-                    hitList.erase(hitList.begin() + j);
-                    cout << "But guessing that this doesn't run" << endl;
-                    cout << "Succesfully removed the square" << endl;
-                    break;
+                if(start.first < 0) {
+                    start = make_pair(xMark, yMark);
                 }
             }
+        }
+
+        if(consecutiveHits >= length) {
+            for(int i = 0; i < length; i++) {
+                int xMark = start.first + direction.first * i;
+                int yMark = start.second + direction.second * i;
+
+                _trackingBoard._grid.at(xMark).at(yMark) = Board::SHIP;
+
+                for (int j = 0; j < hitList.size(); j++) {
+                    if (hitList.at(j).first == xMark && hitList.at(j).second == yMark) {
+                        hitList.erase(hitList.begin() + j);
+                        break;
+                    }
+                }
+            }
+        } else {
+            //cerr << "Something went wrong determing where the sunken ship was located" << endl;
         }
     }
 }
@@ -618,7 +639,7 @@ vector<vector<int>> IntelligentComputer::findDestroyProbability() {
 }
 
 pair<int, int> IntelligentComputer::chooseFromProbability(vector<vector<int>> probabilityGrid) {
-    int maxVal = probabilityGrid.at(0).at(0);
+    int maxVal = 0;
     vector<pair<int, int>> maxCoords;
 
     for(int i = 0; i < probabilityGrid.size(); i++) {
@@ -635,35 +656,34 @@ pair<int, int> IntelligentComputer::chooseFromProbability(vector<vector<int>> pr
         }
     }
 
-    cout << "The max valid value I came up with is " << maxVal << endl;
+    // This section is necessary in case all of the probabilities were 0
 
-    int randIndex = rand() % maxCoords.size();
-
-//    for(int i = 0; i < maxCoords.size(); i++) {
-//        cout << maxCoords.at(i).first << ", " << maxCoords.at(i).second << endl;
-//    }
-
-    return maxCoords.at(randIndex);
+    if(maxCoords.size() > 0) {
+        int randIndex = rand() % maxCoords.size();
+        return maxCoords.at(randIndex);
+    } else {
+        return make_pair(0, 0);
+    }
 }
 
 pair<int, int> IntelligentComputer::getMove() {
     vector<vector<int>> probabilityGrid;
 
     if(hitList.empty()) {
-        cout << "SEARCH MODE" << endl;
         probabilityGrid = findSearchProbability();
     } else {
-        cout << "DESTORY MODE" << endl;
         probabilityGrid = findDestroyProbability();
-    }
+        pair<int, int> maxPos = chooseFromProbability(probabilityGrid);
 
-    for(int i = 0; i < 10; i++) {
-        for(int j = 0; j < 10; j++) {
-            cout << probabilityGrid.at(i).at(j) << " ";
+        if(probabilityGrid.at(maxPos.first).at(maxPos.second) == 0) {
+            //cerr << "SOMETHING WENT WRONG. NOW RESETING" << endl;
+
+            hitList.clear();
+            probabilityGrid = findSearchProbability();
+        } else {
+            return maxPos;
         }
-        cout << endl;
     }
-    cout << endl;
 
     return chooseFromProbability(probabilityGrid);
 }
@@ -1191,7 +1211,8 @@ Game<p1Type, p2Type>::Game(string p1Name, string p2Name, vector<int> shipLengths
 
 template<typename p1Type, typename p2Type>
 void Game<p1Type, p2Type>::runGame() {
-    playerOne.placeShips();
+    //playerOne.placeShips();
+    playerOne.placeShipsRandomly();
 
     if(!playerOne.allShipsPlaced()) {
         cerr << playerOne.getName() <<  " failed to place all their ships" << endl;
@@ -1205,8 +1226,11 @@ void Game<p1Type, p2Type>::runGame() {
         return;
     }
 
+    int turns = 0;
+
     while(true) {
         if(turn == 1) {
+            turns++;
             pair<int, int> move = playerOne.getMove();
 
             if(move.first < 0) {
@@ -1221,6 +1245,7 @@ void Game<p1Type, p2Type>::runGame() {
             if(playerTwo.allShipsSunk()) {
                 battlelog.recordWinner(playerOne.getName());
                 cerr << playerOne.getName() << " wins" << endl;
+                cout << turns << endl;
                 return;
             }
 
@@ -1240,6 +1265,7 @@ void Game<p1Type, p2Type>::runGame() {
             if(playerOne.allShipsSunk()) {
                 battlelog.recordWinner(playerTwo.getName());
                 cerr << playerTwo.getName() << " wins" << endl;
+                cout << turns << endl;
                 return;
             }
 
@@ -1251,9 +1277,9 @@ void Game<p1Type, p2Type>::runGame() {
 int main() {
     srand(time(0));
 
-    vector<int> shipLengths = {1, 1, 1, 1, 1, 1};
+    vector<int> shipLengths = {3, 3, 3, 3, 3, 3};
 
-    Game<IntelligentComputer, IntelligentComputer> game("Human", "Computer");
+    Game<HumanSFMLPlayer, IntelligentComputer> game("Human", "Computer");
 
     game.runGame();
 }
