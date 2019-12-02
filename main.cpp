@@ -305,6 +305,7 @@ public:
 
     virtual pair<int, int> getMove() = 0;
     virtual void placeShips() = 0;
+    virtual void reportGameover(bool winner) = 0;
     void placeShipsRandomly();
 
     ShotOutcome fireShotAt(int xPos, int yPos);
@@ -378,6 +379,7 @@ public:
 
     pair<int, int> getMove() override;
     void placeShips() override;
+    void reportGameover(bool winner) override;
 };
 
 pair<int, int> ComputerRandomPlayer::getMove() {
@@ -393,6 +395,10 @@ pair<int, int> ComputerRandomPlayer::getMove() {
 
 void ComputerRandomPlayer::placeShips() {
     placeShipsRandomly();
+}
+
+void ComputerRandomPlayer::reportGameover(bool winner) {
+    return;
 }
 
 class IntelligentComputer : public Player {
@@ -414,6 +420,7 @@ public:
 
     pair<int, int> getMove() override;
     void placeShips() override;
+    void reportGameover(bool winner) override;
 };
 
 void IntelligentComputer::markShot(int xPos, int yPos, ShotOutcome outcome) {
@@ -666,6 +673,10 @@ void IntelligentComputer::placeShips() {
     placeShipsRandomly();
 }
 
+void IntelligentComputer::reportGameover(bool winner) {
+    return;
+}
+
 // Responsible for rendering a single ship
 class ShipRenderer {
 public:
@@ -749,7 +760,7 @@ bool ShipRenderer::contains(Vector2i mousePos) {
 // Responsible for rendering the grid and the fleet (depending on the context of if your being placed or playing)
 class BoardRenderer {
 public:
-    BoardRenderer(RenderWindow &window, Board &board, Fleet &fleet, double dispX, double dispY, string label);
+    BoardRenderer(RenderWindow &window, Board &board, double dispX, double dispY, string label);
 
     void draw();
     void drawStatusSquare(double mouseX, double mouseY);
@@ -781,7 +792,7 @@ public:
     void updateSpacePress();
     void updateShipPos(Vector2i mousePos);
     void selectShip(Vector2i mousePos);
-    void lockShip(Vector2i mousePos);
+    void lockShip();
     void handleClick(Vector2i mousePos);
     bool spacePressed();
     void rotateShip();
@@ -790,6 +801,7 @@ private:
     BoardRenderer *_boardRenderer;
     vector<ShipRenderer> _shipRenderers;
     RenderWindow *_window;
+    Ship *_currentShip;
     int _spaceCount;
     int _activeIndex;
     double _activeOffsetX;
@@ -842,9 +854,9 @@ void FleetRenderer::updateShipPos(Vector2i mousePos) {
         int rowPos = gridPos.first;
         int columnPos = gridPos.second;
 
-        _shipRenderers.at(_activeIndex).getShip().setGridPos(rowPos, columnPos);
+        _currentShip->setGridPos(rowPos, columnPos);
 
-        if(_boardRenderer->getBoard().shipFits(_shipRenderers.at(_activeIndex).getShip())) {
+        if(_boardRenderer->getBoard().shipFits(*_currentShip)) {
             xPos = rowPos * 50 + _boardRenderer->getDispX();
             yPos = columnPos * 50 + _boardRenderer->getDispY();
         }
@@ -857,6 +869,7 @@ void FleetRenderer::selectShip(Vector2i mousePos) {
     for(int i = 0; i < _shipRenderers.size(); i++) {
         if(_shipRenderers.at(i).contains(mousePos) && !_shipRenderers.at(i).getShip().isPlaced()) {
             _activeIndex = i;
+            _currentShip = &_shipRenderers.at(_activeIndex).getShip();
 
             _activeOffsetX = -mousePos.x + _shipRenderers.at(i).getDispX();
             _activeOffsetY = -mousePos.y + _shipRenderers.at(i).getDispY();
@@ -866,9 +879,9 @@ void FleetRenderer::selectShip(Vector2i mousePos) {
     }
 }
 
-void FleetRenderer::lockShip(Vector2i mousePos) {
-    if(_boardRenderer->getBoard().shipFits((_shipRenderers.at(_activeIndex).getShip()))) { // TODO: this code sucks. Make it good
-        _boardRenderer->getBoard().placeShip(_shipRenderers.at(_activeIndex).getShip());
+void FleetRenderer::lockShip() {
+    if(_boardRenderer->getBoard().shipFits(*_currentShip)) {
+        _boardRenderer->getBoard().placeShip(*_currentShip);
 
         _activeIndex = -1;
 
@@ -880,7 +893,7 @@ void FleetRenderer::handleClick(Vector2i mousePos) {
     if(_activeIndex == -1) {
         selectShip(mousePos);
     } else {
-        lockShip(mousePos);
+        lockShip();
     }
 }
 
@@ -889,10 +902,10 @@ bool FleetRenderer::spacePressed() {
 }
 
 void FleetRenderer::rotateShip() {
-    _shipRenderers.at(_activeIndex).getShip().rotate();
+    _currentShip->rotate();
 }
 
-BoardRenderer::BoardRenderer(RenderWindow &window, Board &board, Fleet &fleet, double dispX, double dispY, string label) {
+BoardRenderer::BoardRenderer(RenderWindow &window, Board &board, double dispX, double dispY, string label) {
     _window = &window;
     _board = &board;
     _dispX = dispX;
@@ -978,16 +991,17 @@ double BoardRenderer::getDispY() {
 }
 
 
-
 class HumanSFMLPlayer : public Player {
 public:
     HumanSFMLPlayer(string name, vector<int> shipLengths);
 
     pair<int, int> getMove() override;
     void placeShips() override;
+    void reportGameover(bool winner) override;
 
 private:
     RenderWindow _window;
+    Font _font;
 
     BoardRenderer _pBoardRenderer;
     BoardRenderer _tBoardRenderer;
@@ -998,22 +1012,20 @@ private:
 
 HumanSFMLPlayer::HumanSFMLPlayer(string name, vector<int> shipLengths) : Player(name, shipLengths),
         _window(VideoMode(1625, 700), "SFML Example Window"),
-        _pBoardRenderer(_window, _primaryBoard, _primaryFleet, 25, 50, "Your Board"),
-        _tBoardRenderer(_window, _trackingBoard, _trackingFleet, 825, 50, "Opponent's Board"),
+        _pBoardRenderer(_window, _primaryBoard, 25, 25, "Your Board"),
+        _tBoardRenderer(_window, _trackingBoard, 825, 25, "Opponent's Board"),
         _tFleetRenderer(_trackingFleet, &_tBoardRenderer, _window),
-        _pFleetRenderer(_primaryFleet, &_pBoardRenderer, _window){}
+        _pFleetRenderer(_primaryFleet, &_pBoardRenderer, _window){
+    if(!_font.loadFromFile("data/arial.ttf")) {
+        cerr << "Error loading font" << endl;
+    }
+}
 
 void HumanSFMLPlayer::placeShips() {
     while(_window.isOpen()) {
         _window.clear( Color::Black );
 
         _pBoardRenderer.draw();
-
-        Font myFont;
-
-        if(!myFont.loadFromFile("data/arial.ttf")) {
-            cerr << "Error lading font" << endl;
-        }
 
         _pFleetRenderer.draw(true);
 
@@ -1076,6 +1088,43 @@ pair<int, int> HumanSFMLPlayer::getMove() {
             if( event.type == Event::Closed ) {
                 _window.close();
                 return make_pair(-1, -1);
+            }
+        }
+    }
+}
+
+void HumanSFMLPlayer::reportGameover(bool winner) {
+    while(_window.isOpen()) {
+        _window.clear( Color::Black );
+
+        _pBoardRenderer.draw();
+        _tBoardRenderer.draw();
+
+        _pFleetRenderer.draw(false);
+        _tFleetRenderer.draw(false);
+
+        Text gameStatus;
+        gameStatus.setFont(_font);
+
+        gameStatus.setPosition(500, 575);
+        gameStatus.setCharacterSize(100);
+
+        if(winner) {
+            gameStatus.setFillColor(Color::Green);
+            gameStatus.setString("You win!");
+        } else {
+            gameStatus.setFillColor(Color::Red);
+            gameStatus.setString("You lose!");
+        }
+
+        _window.draw(gameStatus);
+
+        _window.display();
+
+        Event event;
+        while(_window.pollEvent(event)) {
+            if( event.type == Event::Closed ) {
+                _window.close();
             }
         }
     }
@@ -1203,7 +1252,7 @@ const vector<int> Game<p1Type, p2Type>::DEFAULT_LENGTHS = {5, 4, 4, 3, 2};
 
 template<typename p1Type, typename p2Type>
 Game<p1Type, p2Type>::Game(string p1Name, string p2Name, vector<int> shipLengths, string battlelogName) : _playerOne(p1Name, shipLengths),
-        _playerTwo(p2Name, shipLengths), Battlelog(battlelogName, p1Name, p2Name) {
+        _playerTwo(p2Name, shipLengths), _battlelog(battlelogName, p1Name, p2Name) {
     _players = {&_playerOne, &_playerTwo};
     _turn = 0;
 }
@@ -1233,6 +1282,10 @@ void Game<p1Type, p2Type>::runGame() {
 
         if(_players.at(!_turn)->allShipsSunk()) {
             _battlelog.recordWinner(_players.at(_turn)->getName());
+
+            _players.at(_turn)->reportGameover(true);
+            _players.at(!_turn)->reportGameover(false);
+
             cerr << _players.at(_turn)->getName() << " wins" << endl;
             return;
         }
