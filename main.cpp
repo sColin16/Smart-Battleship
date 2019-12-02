@@ -1008,7 +1008,6 @@ void HumanSFMLPlayer::placeShips() {
         _window.clear( Color::Black );
 
         _pBoardRenderer.draw();
-        //_tBoardRenderer.draw();
 
         Font myFont;
 
@@ -1017,7 +1016,6 @@ void HumanSFMLPlayer::placeShips() {
         }
 
         _pFleetRenderer.draw(true);
-        //_tFleetRenderer.draw(true);
 
         Vector2i mousePos = sf::Mouse::getPosition(_window);
         _pFleetRenderer.updateSpacePress();
@@ -1186,13 +1184,15 @@ class Game {
 public:
     Game(string p1name, string p2name, vector<int> shipLengths = DEFAULT_LENGTHS, string battlelogName = "battelog.txt");
 
-    p1Type playerOne;
-    p2Type playerTwo;
-    int turn;
-
-    Battlelog battlelog;
-
     void runGame();
+    
+private:
+    vector<Player *> _players;
+    p1Type _playerOne;
+    p2Type _playerTwo;
+    int _turn;
+
+    Battlelog _battlelog;
 
     static const vector<int> DEFAULT_LENGTHS;
 };
@@ -1201,73 +1201,42 @@ template<typename p1Type, typename p2Type>
 const vector<int> Game<p1Type, p2Type>::DEFAULT_LENGTHS = {5, 4, 4, 3, 2};
 
 template<typename p1Type, typename p2Type>
-Game<p1Type, p2Type>::Game(string p1Name, string p2Name, vector<int> shipLengths, string battlelogName) : playerOne(p1Name, shipLengths),
-        playerTwo(p2Name, shipLengths), battlelog(battlelogName, p1Name, p2Name) {
-    turn = 1;
+Game<p1Type, p2Type>::Game(string p1Name, string p2Name, vector<int> shipLengths, string battlelogName) : _playerOne(p1Name, shipLengths),
+        _playerTwo(p2Name, shipLengths), _battlelog(battlelogName, p1Name, p2Name) {
+    _players = {&_playerOne, &_playerTwo};
+    _turn = 0;
 }
 
 template<typename p1Type, typename p2Type>
 void Game<p1Type, p2Type>::runGame() {
-    //playerOne.placeShips();
-    playerOne.placeShipsRandomly();
+    for(int i = 0; i < 2; i++) {
+        _players.at(i)->placeShips();
 
-    if(!playerOne.allShipsPlaced()) {
-        cerr << playerOne.getName() <<  " failed to place all their ships" << endl;
-        return;
+        if(!_players.at(i)->allShipsPlaced()) {
+            cerr << _players.at(i)->getName() <<  " failed to place all their ships" << endl;
+            return;
+        }
     }
-
-    playerTwo.placeShips();
-
-    if(!playerTwo.allShipsPlaced()) {
-        cerr << playerTwo.getName() << " failed to place all their ships" << endl;
-        return;
-    }
-
-    int turns = 0;
 
     while(true) {
-        if(turn == 1) {
-            turns++;
-            pair<int, int> move = playerOne.getMove();
+        pair<int, int> move = _players.at(_turn)->getMove();
 
-            if(move.first < 0) {
-                cerr << playerOne.getName() << " has forfeited the match" << endl;
-                return;
-            }
-
-            ShotOutcome outcome = playerTwo.fireShotAt(move.first, move.second);
-            playerOne.markShot(move.first, move.second, outcome);
-            battlelog.recordMove(playerOne.getName(), move.first, move.second, outcome);
-
-            if(playerTwo.allShipsSunk()) {
-                battlelog.recordWinner(playerOne.getName());
-                cerr << playerOne.getName() << " wins" << endl;
-                cout << turns << endl;
-                return;
-            }
-
-            turn = 2;
-        } else if(turn == 2) {
-            pair<int, int> move = playerTwo.getMove();
-
-            if(move.first < 0) {
-                cerr << playerTwo.getName() << " has forfeited the match" << endl;
-                return;
-            }
-
-            ShotOutcome outcome = playerOne.fireShotAt(move.first, move.second);
-            playerTwo.markShot(move.first, move.second, outcome);
-            battlelog.recordMove(playerTwo.getName(), move.first, move.second, outcome);
-
-            if(playerOne.allShipsSunk()) {
-                battlelog.recordWinner(playerTwo.getName());
-                cerr << playerTwo.getName() << " wins" << endl;
-                cout << turns << endl;
-                return;
-            }
-
-            turn = 1;
+        if(move.first < 0) {
+            cerr << _players.at(_turn)->getName() << " has forfeited the match" << endl;
+            return;
         }
+
+        ShotOutcome outcome = _players.at(!_turn)->fireShotAt(move.first, move.second);
+        _players.at(_turn)->markShot(move.first, move.second, outcome);
+        _battlelog.recordMove(_players.at(_turn)->getName(), move.first, move.second, outcome);
+
+        if(_players.at(!_turn)->allShipsSunk()) {
+            _battlelog.recordWinner(_players.at(_turn)->getName());
+            cerr << _players.at(_turn)->getName() << " wins" << endl;
+            return;
+        }
+
+        _turn = !_turn;
     }
 }
 
