@@ -16,32 +16,6 @@ using namespace sf;                             // using the sf namespace
 #include <utility>
 
 enum Orientation {HORIZONTAL, VERTICAL};
-// Make A vector of squares instead of map, and yeah, that should be good
-//struct Coordinate {
-//    int x;
-//    int y;
-//};
-//
-//Coordinate makeCoordinate(int x, int y) {
-//    Coordinate coordinate;
-//    coordinate.x = x;
-//    coordinate.y = y;
-//
-//    return coordinate;
-//}
-//
-//struct Square {
-//    Coordinate location;
-//    bool hit;
-//};
-//
-//Square makeSquare(Coordinate location, bool hit) {
-//    Square square;
-//    square.location = location;
-//    square.hit = hit;
-//
-//    return square;
-//}
 
 class Ship {
 public:
@@ -775,7 +749,7 @@ bool ShipRenderer::contains(Vector2i mousePos) {
 // Responsible for rendering the grid and the fleet (depending on the context of if your being placed or playing)
 class BoardRenderer {
 public:
-    BoardRenderer(RenderWindow &window, Board &board, Fleet &fleet, double dispX, double dispY);
+    BoardRenderer(RenderWindow &window, Board &board, Fleet &fleet, double dispX, double dispY, string label);
 
     void draw();
     void drawStatusSquare(double mouseX, double mouseY);
@@ -792,6 +766,9 @@ protected:
 
     double _dispX;
     double _dispY;
+
+    Font _font;
+    string _label;
 };
 
 
@@ -915,11 +892,17 @@ void FleetRenderer::rotateShip() {
     _shipRenderers.at(_activeIndex).getShip().rotate();
 }
 
-BoardRenderer::BoardRenderer(RenderWindow &window, Board &board, Fleet &fleet, double dispX, double dispY) {
+BoardRenderer::BoardRenderer(RenderWindow &window, Board &board, Fleet &fleet, double dispX, double dispY, string label) {
     _window = &window;
     _board = &board;
     _dispX = dispX;
     _dispY = dispY;
+
+    _label = label;
+
+    if(!_font.loadFromFile("data/arial.ttf")) {
+        cerr << "Error loading font" << endl;
+    }
 }
 
 void BoardRenderer::draw() {
@@ -950,6 +933,14 @@ void BoardRenderer::draw() {
             }
         }
     }
+
+    Text boardLabel;
+    boardLabel.setFont(_font);
+    boardLabel.setString(_label);
+    boardLabel.setFillColor(Color::White);
+    boardLabel.setPosition(_dispX, _dispY + 25 + 50 * (Board::GRID_SIZE));
+
+    _window->draw(boardLabel);
 }
 
 void BoardRenderer::drawStatusSquare(double mouseX, double mouseY) {
@@ -1007,8 +998,8 @@ private:
 
 HumanSFMLPlayer::HumanSFMLPlayer(string name, vector<int> shipLengths) : Player(name, shipLengths),
         _window(VideoMode(1625, 700), "SFML Example Window"),
-        _pBoardRenderer(_window, _primaryBoard, _primaryFleet, 25, 50),
-        _tBoardRenderer(_window, _trackingBoard, _trackingFleet, 825, 50),
+        _pBoardRenderer(_window, _primaryBoard, _primaryFleet, 25, 50, "Your Board"),
+        _tBoardRenderer(_window, _trackingBoard, _trackingFleet, 825, 50, "Opponent's Board"),
         _tFleetRenderer(_trackingFleet, &_tBoardRenderer, _window),
         _pFleetRenderer(_primaryFleet, &_pBoardRenderer, _window){}
 
@@ -1017,10 +1008,16 @@ void HumanSFMLPlayer::placeShips() {
         _window.clear( Color::Black );
 
         _pBoardRenderer.draw();
-        _tBoardRenderer.draw();
+        //_tBoardRenderer.draw();
+
+        Font myFont;
+
+        if(!myFont.loadFromFile("data/arial.ttf")) {
+            cerr << "Error lading font" << endl;
+        }
 
         _pFleetRenderer.draw(true);
-        _tFleetRenderer.draw(true);
+        //_tFleetRenderer.draw(true);
 
         Vector2i mousePos = sf::Mouse::getPosition(_window);
         _pFleetRenderer.updateSpacePress();
