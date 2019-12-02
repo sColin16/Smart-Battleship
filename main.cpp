@@ -1084,57 +1084,82 @@ pair<int, int> HumanSFMLPlayer::getMove() {
 // Handles doing the file input/output stuff that is required for the project
 class Battlelog {
 public:
-    Battlelog(string filename, string p1Name, string p2Nmae);
+    Battlelog(string filename, string p1Name, string p2Name);
     ~Battlelog();
-
-    ofstream battlelogFile;
-
-    bool firstPlayer;
-
-    char convertYPos(int yPos);
-    int convertXPos(int xPos);
-    string getOutcomeString(ShotOutcome outcome);
-
-    void writeSeparator();
-    void writeName(string name);
-    void writeMove(int xPos, int yPos, ShotOutcome outcome);
 
     void recordMove(string name, int xPos, int yPos, ShotOutcome outcome);
     void recordWinner(string name);
+
+private:
+    ofstream _battlelogFile;
+
+    bool _firstPlayer;
+
+    static char _convertYPos(int yPos);
+    static int _convertXPos(int xPos);
+    static string _getOutcomeString(ShotOutcome outcome);
+
+    void _writeSeparator();
+    void _writeName(string name);
+    void _writeMove(int xPos, int yPos, ShotOutcome outcome);
 };
 
 Battlelog::Battlelog(string filename, string p1Name, string p2Name) {
-    battlelogFile.open(filename);
+    _battlelogFile.open(filename);
 
-    firstPlayer = true;
+    _firstPlayer = true;
 
-    if(!battlelogFile) {
+    if(!_battlelogFile) {
         cerr << "Failed to open the battlelog" << endl;
         return;
     }
 
-    writeSeparator();
-    writeName(p1Name);
-    writeName(p2Name);
+    _writeSeparator();
+    _writeName(p1Name);
+    _writeName(p2Name);
 
-    battlelogFile << "|" << endl;
+    _battlelogFile << "|" << endl;
 
-    writeSeparator();
+    _writeSeparator();
 }
 
 Battlelog::~Battlelog() {
-    battlelogFile.close();
+    _battlelogFile.close();
 }
 
-char Battlelog::convertYPos(int yPos) {
+void Battlelog::recordMove(string name, int xPos, int yPos, ShotOutcome outcome) {
+    if(_firstPlayer) {
+        _battlelogFile << "|";
+    }
+
+    _writeMove(xPos, yPos, outcome);
+
+    if(!_firstPlayer) {
+        _battlelogFile << endl;
+    }
+
+    _firstPlayer = !_firstPlayer;
+}
+
+void Battlelog::recordWinner(string name) {
+    if(!_firstPlayer) { // This really means if the first player just won
+        _battlelogFile << setw(12) << setfill(' ') << "" << "|" << endl;
+    }
+
+    _writeSeparator();
+    _battlelogFile << endl;
+    _battlelogFile << name << " wins!" << endl;
+}
+
+char Battlelog::_convertYPos(int yPos) {
     return yPos + 'A';
 }
 
-int Battlelog::convertXPos(int xPos) {
+int Battlelog::_convertXPos(int xPos) {
     return xPos + 1;
 }
 
-string Battlelog::getOutcomeString(ShotOutcome outcome) {
+string Battlelog::_getOutcomeString(ShotOutcome outcome) {
     if(outcome.sunkenIndex >=0 ) {
         return "SUNK";
     }
@@ -1142,50 +1167,26 @@ string Battlelog::getOutcomeString(ShotOutcome outcome) {
     return outcome.hit ? "HIT" : "MISS";
 }
 
-void Battlelog::writeSeparator() {
-    battlelogFile << "|" << setw(25) << setfill('=') << "" << "|" << endl;
+void Battlelog::_writeSeparator() {
+    _battlelogFile << "|" << setw(25) << setfill('=') << "" << "|" << endl;
 }
 
-void Battlelog::writeName(string name) {
-    battlelogFile << "| " << setw(10) << setfill(' ') << left << name << " ";
+void Battlelog::_writeName(string name) {
+    _battlelogFile << "| " << setw(10) << setfill(' ') << left << name << " ";
 }
 
-void Battlelog::writeMove(int xPos, int yPos, ShotOutcome outcome) {
-    battlelogFile << " " << setw(5) << setfill(' ') << left << (convertYPos(yPos) + to_string(convertXPos(xPos)));
-    battlelogFile << " " << setw(4) << setfill(' ') << right << getOutcomeString(outcome) << " |";
-}
-
-void Battlelog::recordMove(string name, int xPos, int yPos, ShotOutcome outcome) {
-    if(firstPlayer) {
-        battlelogFile << "|";
-    }
-
-    writeMove(xPos, yPos, outcome);
-
-    if(!firstPlayer) {
-        battlelogFile << endl;
-    }
-
-    firstPlayer = !firstPlayer;
-}
-
-void Battlelog::recordWinner(string name) {
-    if(!firstPlayer) { // This really means if the first player just won
-        battlelogFile << setw(12) << setfill(' ') << "" << "|" << endl;
-    }
-
-    writeSeparator();
-    battlelogFile << endl;
-    battlelogFile << name << " wins!" << endl;
+void Battlelog::_writeMove(int xPos, int yPos, ShotOutcome outcome) {
+    _battlelogFile << " " << setw(5) << setfill(' ') << left << (_convertYPos(yPos) + to_string(_convertXPos(xPos)));
+    _battlelogFile << " " << setw(4) << setfill(' ') << right << _getOutcomeString(outcome) << " |";
 }
 
 template<typename p1Type, typename p2Type>
 class Game {
 public:
-    Game(string p1name, string p2name, vector<int> shipLengths = DEFAULT_LENGTHS, string battlelogName = "battelog.txt");
+    Game(string p1name, string p2name, vector<int> shipLengths = DEFAULT_LENGTHS, string battlelogName = "battlelog.txt");
 
     void runGame();
-    
+
 private:
     vector<Player *> _players;
     p1Type _playerOne;
@@ -1202,7 +1203,7 @@ const vector<int> Game<p1Type, p2Type>::DEFAULT_LENGTHS = {5, 4, 4, 3, 2};
 
 template<typename p1Type, typename p2Type>
 Game<p1Type, p2Type>::Game(string p1Name, string p2Name, vector<int> shipLengths, string battlelogName) : _playerOne(p1Name, shipLengths),
-        _playerTwo(p2Name, shipLengths), _battlelog(battlelogName, p1Name, p2Name) {
+        _playerTwo(p2Name, shipLengths), Battlelog(battlelogName, p1Name, p2Name) {
     _players = {&_playerOne, &_playerTwo};
     _turn = 0;
 }
