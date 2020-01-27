@@ -1,0 +1,47 @@
+Title: GUI Battleship with Intelligent Computer Opponent (Colin Siles, Section A)
+
+
+Problem Description:
+
+I implemented a GUI Battleship using SFML. A human player can play using their mouse and keyboard
+to both place their ships, and make guesses against an opponent. An intelligent computer opponent, that analyzes the
+probability of a ship being in a given location, is provided for a user to play against. There were numerous classes
+implemented for this project, including the Board class originally planned on. A 2D vector is used to store the grid
+of the game, and after the game ends, a file called "battlelog.txt" is written with a log of all the moves made.
+
+
+Program Documentation:
+
+This project must be compiled with SFML. Note that this project was developed on a Mac, so the
+CMakeLists.txt file may not be usable on Windows. You can still copy and paste the whole list of files from that file
+though. Directions are provided in the game. Once the game is over, you just close the window. There are a lot of ways
+to extend this program, but the most viable is probably adding a new Player subclass. All Player subclasses require 3
+methods: getMove, placeShips, and reportGameover to be defined. One interesting addition could be a NetworkPlayer, an
+interface for a player playing on a different computer. This would allow people to play one another on different
+computers. The getMove function would have to send some sort of request (HTTP, perhaps) to the server the player is
+running on, and then parse the response. Other functions would have to be implemented similarly. Also, it would be
+interesting to extend the functionality of the IntelligentComputer. Currently, it assumes that player places ships
+randomly, but that isn't necessarily true. Employing machine learning to study how its opponents place ships could make
+it even more powerful. Finally, machine learning could perhaps also be employed to study how best to place ships against
+an opponent.
+
+
+Tests (my program isn't input/output since its GUI, but here are some cases I worked to handle properly):
+
+1. You can't place a ship outside of the grid: visually, it won't lock to the grid, and clicking will do nothing.
+2. Similarly, you can't place a ship such that it overlaps another one.
+3. Pressing space to rotate a ship when none is selected does nothing
+4. Clicking outside the opponent's grid won't fire a shot
+5. Click on a space that was already guessed also won't fire a shot
+6. You can't make any more guesses after the game ends: the selection square dispaears, and clicking does nothing
+
+
+Reflections:
+
+I became much more comfortable with implementing and using classes throughout this project. Due to the numerous number
+of classes I also implemented, I learned how to handle this complexity, and write clean code that would allow for
+abstraction. I also learned a lot about reference and pointers through trial and error. The most frustrating debugging
+I did involved accidentally passing to a function by value instead of reference, which resulted in strange behavior.
+Many times, problems I encountered were a matter of forgetting a "*" or "&", but I am now much more comfortable using
+both pointers and references. I also learned how to return a reference from a function! Finally, I became more
+comfortable with using SFML, since I implemented it within a class, rather than directly in main.
